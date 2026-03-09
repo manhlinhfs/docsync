@@ -11,6 +11,7 @@ Keep `docsync` practical, inspectable, and easy to distribute as a single CLI bi
 3. Avoid adding heavyweight runtime dependencies unless they unlock a clear roadmap milestone.
 4. Every new feature should fit the binary-first distribution model.
 5. Every user-visible behavior change should update docs and roadmap notes.
+6. Root user docs must stay language-complete across `README.md`, `README_vi.md`, and `README_ru.md`.
 
 ## Local workflow
 
@@ -25,6 +26,7 @@ cargo build
 - code compiles
 - tests pass
 - docs updated
+- `README.md`, `README_vi.md`, and `README_ru.md` updated together when user-facing behavior changes
 - roadmap milestone updated if scope changed
 - manifest/config schema changes are documented
 

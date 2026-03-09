@@ -20,6 +20,7 @@ Every release should pass:
 2. `cargo test`
 3. `cargo build --release`
 4. documentation review for new or changed commands
+5. root README language parity review for English, Vietnamese, and Russian
 
 ## Binary distribution
 
@@ -37,6 +38,7 @@ Each release should eventually include:
 - checksums
 - changelog notes
 - example quickstart commands
+- synchronized `README.md`, `README_vi.md`, and `README_ru.md`
 
 ## Schema files that need explicit compatibility notes
 

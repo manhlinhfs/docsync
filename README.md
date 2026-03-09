@@ -1,5 +1,7 @@
 # docsync
 
+[Tiếng Việt](README_vi.md) | [Русский](README_ru.md) | [English](README.md)
+
 `docsync` is a Rust CLI for building local, versioned snapshots of technical documentation that can later be imported into OmniMem or any other retrieval system.
 
 It is designed around **universal intake**, not just a few handpicked docs homepages. The entry URL for a source may be:
@@ -215,6 +217,7 @@ cargo fmt
 
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [INTAKE_MODEL.md](docs/INTAKE_MODEL.md)
+- [LANGUAGE_POLICY.md](docs/LANGUAGE_POLICY.md)
 - [USAGE.md](docs/USAGE.md)
 - [RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - [ROADMAP.md](ROADMAP.md)

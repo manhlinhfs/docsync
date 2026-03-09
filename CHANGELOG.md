@@ -1,5 +1,16 @@
 # Changelog
 
+## `Unreleased`
+
+Added:
+
+- multilingual root documentation parity with `README.md`, `README_vi.md`, and `README_ru.md`
+- `docs/LANGUAGE_POLICY.md` to make translation completeness a standing release requirement
+
+Changed:
+
+- release and contribution rules now require synchronized root user documentation across all supported languages
+
 ## `0.6.0` - 2026-03-09
 
 Added:
