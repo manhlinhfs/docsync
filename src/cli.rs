@@ -31,6 +31,8 @@ pub enum Commands {
     Completions(CompletionsArgs),
     Migrate(MigrateArgs),
     Dashboard(DashboardArgs),
+    #[command(hide = true)]
+    DashboardHost(DashboardHostArgs),
     Notify {
         #[command(subcommand)]
         command: NotifyCommands,
@@ -76,7 +78,34 @@ pub struct DashboardArgs {
     pub output: Option<PathBuf>,
 
     #[arg(long)]
+    pub serve: bool,
+
+    #[arg(long)]
+    pub stop: bool,
+
+    #[arg(long)]
+    pub status: bool,
+
+    #[arg(long, default_value = "127.0.0.1")]
+    pub host: String,
+
+    #[arg(long, default_value_t = 4317)]
+    pub port: u16,
+
+    #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct DashboardHostArgs {
+    #[arg(long)]
+    pub root: PathBuf,
+
+    #[arg(long)]
+    pub host: String,
+
+    #[arg(long)]
+    pub port: u16,
 }
 
 #[derive(Debug, Args)]

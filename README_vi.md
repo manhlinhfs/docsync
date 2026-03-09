@@ -24,9 +24,9 @@ Phù hợp nhất với:
 - **Docs render bằng JS** với headless fallback
 - **Docs lấy từ repo Git**
 
-Phiên bản stable hiện tại: **`1.3.0`**
+Phiên bản stable hiện tại: **`1.3.1`**
 
-Các mốc phát triển tiếp theo sau `v1.3.0`: xem [ROADMAP.md](ROADMAP.md).
+Các mốc phát triển tiếp theo sau `v1.3.1`: xem [ROADMAP.md](ROADMAP.md).
 
 ## **Bắt Đầu Nhanh**
 
@@ -179,6 +179,9 @@ Tạo dashboard HTML local để mở bằng trình duyệt:
 
 ```bash
 docsync dashboard openclaw
+docsync dashboard openclaw --serve --host 127.0.0.1 --port 4317
+docsync dashboard openclaw --status
+docsync dashboard openclaw --stop
 ```
 
 ## **Incremental Sync**

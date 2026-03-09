@@ -1,5 +1,18 @@
 # Changelog
 
+## `1.3.1` - 2026-03-09
+
+Added:
+
+- `docsync dashboard --serve` to start a local or public dashboard web server from a snapshot
+- `docsync dashboard --status` to inspect whether a dashboard server is running
+- `docsync dashboard --stop` to stop a running dashboard server
+
+Changed:
+
+- dashboard server control now persists lightweight state files under the docsync home directory
+- dashboard hosting is now self-contained inside the Rust binary instead of requiring an external Node process
+
 ## `1.3.0` - 2026-03-09
 
 Added:

@@ -24,9 +24,9 @@ It works well for:
 - **JS-heavy docs** with optional headless fallback
 - **Git-native docs repos**
 
-Current stable version: **`1.3.0`**
+Current stable version: **`1.3.1`**
 
-Planned milestones after `v1.3.0`: see [ROADMAP.md](ROADMAP.md).
+Planned milestones after `v1.3.1`: see [ROADMAP.md](ROADMAP.md).
 
 ## **Quick Start**
 
@@ -177,6 +177,9 @@ Build a browser-friendly review page with:
 
 ```bash
 docsync dashboard openclaw
+docsync dashboard openclaw --serve --host 127.0.0.1 --port 4317
+docsync dashboard openclaw --status
+docsync dashboard openclaw --stop
 ```
 
 ## **Incremental Sync**

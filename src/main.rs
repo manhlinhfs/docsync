@@ -27,7 +27,9 @@ use serde::Serialize;
 
 use crate::cli::{Cli, Commands, CompletionShell, NotifyCommands, SourceCommands};
 use crate::config::{ensure_layout, load_config, resolve_paths};
-use crate::dashboard::build_dashboard;
+use crate::dashboard::{
+    build_dashboard, dashboard_status, run_dashboard_host, serve_dashboard, stop_dashboard,
+};
 use crate::migrate::migrate_runtime;
 use crate::models::NewSource;
 use crate::omnimem::{import_snapshot, verify_snapshot};
@@ -101,18 +103,76 @@ fn run() -> Result<()> {
         }
         Commands::Dashboard(args) => {
             ensure_layout(&paths)?;
-            let result = build_dashboard(&paths, &args.name, args.reference, args.output)?;
-            if args.json {
-                print_json(&result)?;
-            } else {
-                println!("Source: {}", result.source_name);
-                println!("Snapshot: {}", result.snapshot_label);
-                println!("Pages shown: {}", result.pages_shown);
-                println!("High quality pages: {}", result.high_quality_pages);
-                println!("Medium quality pages: {}", result.medium_quality_pages);
-                println!("Low quality pages: {}", result.low_quality_pages);
-                println!("Output: {}", result.output_path.display());
+            let mode_count =
+                usize::from(args.serve) + usize::from(args.stop) + usize::from(args.status);
+            if mode_count > 1 {
+                anyhow::bail!("choose at most one of --serve, --stop, or --status");
             }
+            if args.stop {
+                let result = stop_dashboard(&paths, &args.name, args.reference)?;
+                if args.json {
+                    print_json(&result)?;
+                } else {
+                    println!("Source: {}", result.source_name);
+                    println!("Snapshot: {}", result.snapshot_label);
+                    println!("Running: {}", result.running);
+                    println!("State file: {}", result.state_path.display());
+                }
+            } else if args.status {
+                let result = dashboard_status(&paths, &args.name, args.reference)?;
+                if args.json {
+                    print_json(&result)?;
+                } else {
+                    println!("Source: {}", result.source_name);
+                    println!("Snapshot: {}", result.snapshot_label);
+                    println!("Running: {}", result.running);
+                    println!("URL: {}", result.url);
+                    println!("Host: {}", result.host);
+                    println!("Port: {}", result.port);
+                    if let Some(pid) = result.pid {
+                        println!("PID: {pid}");
+                    }
+                    println!("State file: {}", result.state_path.display());
+                }
+            } else if args.serve {
+                let result = serve_dashboard(
+                    &paths,
+                    &args.name,
+                    args.reference,
+                    args.output,
+                    &args.host,
+                    args.port,
+                )?;
+                if args.json {
+                    print_json(&result)?;
+                } else {
+                    println!("Source: {}", result.source_name);
+                    println!("Snapshot: {}", result.snapshot_label);
+                    println!("URL: {}", result.url);
+                    println!("Host: {}", result.host);
+                    println!("Port: {}", result.port);
+                    println!("PID: {}", result.pid);
+                    println!("Already running: {}", result.already_running);
+                    println!("Output: {}", result.output_path.display());
+                    println!("State file: {}", result.state_path.display());
+                }
+            } else {
+                let result = build_dashboard(&paths, &args.name, args.reference, args.output)?;
+                if args.json {
+                    print_json(&result)?;
+                } else {
+                    println!("Source: {}", result.source_name);
+                    println!("Snapshot: {}", result.snapshot_label);
+                    println!("Pages shown: {}", result.pages_shown);
+                    println!("High quality pages: {}", result.high_quality_pages);
+                    println!("Medium quality pages: {}", result.medium_quality_pages);
+                    println!("Low quality pages: {}", result.low_quality_pages);
+                    println!("Output: {}", result.output_path.display());
+                }
+            }
+        }
+        Commands::DashboardHost(args) => {
+            run_dashboard_host(&args.root, &args.host, args.port)?;
         }
         Commands::Notify { command } => {
             ensure_layout(&paths)?;

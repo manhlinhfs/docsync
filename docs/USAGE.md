@@ -151,9 +151,13 @@ Low-signal pages are also skipped by default unless you pass `--include-low-sign
 ```bash
 docsync dashboard openclaw --json
 docsync dashboard supabase --ref snapshot-20260309 --output ./supabase-dashboard.html
+docsync dashboard openclaw --serve --host 127.0.0.1 --port 4317
+docsync dashboard openclaw --status
+docsync dashboard openclaw --stop
 ```
 
 The dashboard is a static HTML file you can open in any browser. It shows page quality, import risk, fetch method, and change state.
+If you pass `--serve`, `docsync` runs a lightweight HTTP server so you can browse the report directly.
 
 ## Send a Telegram summary
 
@@ -181,4 +185,4 @@ docsync migrate --json
 
 ## Notes
 
-`v1.3.0` adds page-quality scoring, low-signal import filtering, a local HTML dashboard, and Telegram summary notifications on top of the multi-engine normalization, incremental sync, normalized import, headless browser fallback, runtime migration, shell completions, and release automation already present in earlier versions.
+`v1.3.1` keeps the `v1.3.0` quality scoring, low-signal filtering, local dashboard, and Telegram summary features, and adds built-in dashboard server lifecycle control with `--serve`, `--status`, and `--stop`.

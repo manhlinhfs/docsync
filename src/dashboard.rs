@@ -1,12 +1,17 @@
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::AppPaths;
 use crate::models::{PageManifestEntry, SnapshotManifest};
 use crate::quality::PageQualityRating;
+use crate::util::now_utc_rfc3339;
 
 #[derive(Debug, Serialize)]
 pub struct DashboardResult {
@@ -17,6 +22,44 @@ pub struct DashboardResult {
     pub high_quality_pages: usize,
     pub medium_quality_pages: usize,
     pub low_quality_pages: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardServeResult {
+    pub source_name: String,
+    pub snapshot_label: String,
+    pub output_path: PathBuf,
+    pub state_path: PathBuf,
+    pub host: String,
+    pub port: u16,
+    pub url: String,
+    pub pid: u32,
+    pub already_running: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardServerStatus {
+    pub source_name: String,
+    pub snapshot_label: String,
+    pub running: bool,
+    pub host: String,
+    pub port: u16,
+    pub url: String,
+    pub pid: Option<u32>,
+    pub state_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DashboardServerState {
+    source_name: String,
+    snapshot_label: String,
+    root_dir: PathBuf,
+    output_path: PathBuf,
+    host: String,
+    port: u16,
+    url: String,
+    pid: u32,
+    started_at: String,
 }
 
 pub fn build_dashboard(
@@ -60,6 +103,155 @@ pub fn build_dashboard(
         medium_quality_pages,
         low_quality_pages,
     })
+}
+
+pub fn serve_dashboard(
+    paths: &AppPaths,
+    source_name: &str,
+    reference: Option<String>,
+    output: Option<PathBuf>,
+    host: &str,
+    port: u16,
+) -> Result<DashboardServeResult> {
+    let built = build_dashboard(paths, source_name, reference, output)?;
+    let state_path = dashboard_state_path(paths, source_name, &built.snapshot_label);
+
+    if let Ok(state) = read_dashboard_state(&state_path) {
+        if state.port == port && state.host == host && is_dashboard_running(&state) {
+            return Ok(DashboardServeResult {
+                source_name: built.source_name,
+                snapshot_label: built.snapshot_label,
+                output_path: built.output_path,
+                state_path,
+                host: state.host,
+                port: state.port,
+                url: state.url,
+                pid: state.pid,
+                already_running: true,
+            });
+        }
+        let _ = stop_process(state.pid);
+        let _ = fs::remove_file(&state_path);
+    }
+
+    let exe = std::env::current_exe().context("failed to resolve current executable")?;
+    let mut child = Command::new(exe);
+    child
+        .arg("--home")
+        .arg(&paths.home)
+        .arg("dashboard-host")
+        .arg("--root")
+        .arg(
+            built
+                .output_path
+                .parent()
+                .context("dashboard output path is missing a parent directory")?,
+        )
+        .arg("--host")
+        .arg(host)
+        .arg("--port")
+        .arg(port.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let child = child.spawn().context("failed to start dashboard server")?;
+    let pid = child.id();
+
+    let state = DashboardServerState {
+        source_name: built.source_name.clone(),
+        snapshot_label: built.snapshot_label.clone(),
+        root_dir: built
+            .output_path
+            .parent()
+            .context("dashboard output path is missing a parent directory")?
+            .to_path_buf(),
+        output_path: built.output_path.clone(),
+        host: host.to_string(),
+        port,
+        url: dashboard_url(host, port),
+        pid,
+        started_at: now_utc_rfc3339(),
+    };
+    write_dashboard_state(&state_path, &state)?;
+
+    Ok(DashboardServeResult {
+        source_name: built.source_name,
+        snapshot_label: built.snapshot_label,
+        output_path: built.output_path,
+        state_path,
+        host: host.to_string(),
+        port,
+        url: state.url,
+        pid,
+        already_running: false,
+    })
+}
+
+pub fn dashboard_status(
+    paths: &AppPaths,
+    source_name: &str,
+    reference: Option<String>,
+) -> Result<DashboardServerStatus> {
+    let snapshot_dir = resolve_snapshot_dir(paths, source_name, reference.as_deref())?;
+    let manifest = read_snapshot_manifest(&snapshot_dir)?;
+    let state_path = dashboard_state_path(paths, source_name, &manifest.snapshot_label);
+    let state = read_dashboard_state(&state_path).ok();
+
+    if let Some(state) = state {
+        let running = is_dashboard_running(&state);
+        return Ok(DashboardServerStatus {
+            source_name: source_name.to_string(),
+            snapshot_label: manifest.snapshot_label,
+            running,
+            host: state.host.clone(),
+            port: state.port,
+            url: state.url.clone(),
+            pid: if running { Some(state.pid) } else { None },
+            state_path,
+        });
+    }
+
+    Ok(DashboardServerStatus {
+        source_name: source_name.to_string(),
+        snapshot_label: manifest.snapshot_label,
+        running: false,
+        host: "127.0.0.1".to_string(),
+        port: 4317,
+        url: dashboard_url("127.0.0.1", 4317),
+        pid: None,
+        state_path,
+    })
+}
+
+pub fn stop_dashboard(
+    paths: &AppPaths,
+    source_name: &str,
+    reference: Option<String>,
+) -> Result<DashboardServerStatus> {
+    let status = dashboard_status(paths, source_name, reference)?;
+    if let Ok(state) = read_dashboard_state(&status.state_path) {
+        let _ = stop_process(state.pid);
+        let _ = fs::remove_file(&status.state_path);
+    }
+    Ok(DashboardServerStatus {
+        running: false,
+        pid: None,
+        ..status
+    })
+}
+
+pub fn run_dashboard_host(root: &Path, host: &str, port: u16) -> Result<()> {
+    let listener = TcpListener::bind((host, port))
+        .with_context(|| format!("failed to bind dashboard server on {host}:{port}"))?;
+
+    for stream in listener.incoming() {
+        let Ok(mut stream) = stream else {
+            continue;
+        };
+        let _ = handle_dashboard_request(&mut stream, root);
+    }
+
+    Ok(())
 }
 
 fn render_dashboard_html(manifest: &SnapshotManifest) -> String {
@@ -377,6 +569,207 @@ fn escape_html(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+fn handle_dashboard_request(stream: &mut TcpStream, root: &Path) -> Result<()> {
+    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut request_line = String::new();
+    if reader.read_line(&mut request_line)? == 0 {
+        return Ok(());
+    }
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let target = parts.next().unwrap_or("/");
+    if method != "GET" && method != "HEAD" {
+        write_response(
+            stream,
+            405,
+            "text/plain; charset=utf-8",
+            b"method not allowed",
+        )?;
+        return Ok(());
+    }
+
+    let relative = target.split('?').next().unwrap_or("/");
+    let relative = percent_decode(relative.trim_start_matches('/'));
+    let requested = if relative.as_os_str().is_empty() {
+        root.join("dashboard.html")
+    } else {
+        root.join(relative)
+    };
+    let path = requested
+        .canonicalize()
+        .unwrap_or_else(|_| root.join("dashboard.html"));
+    let root_canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    if !path.starts_with(&root_canonical) {
+        write_response(stream, 403, "text/plain; charset=utf-8", b"forbidden")?;
+        return Ok(());
+    }
+    let path = if path.is_dir() {
+        path.join("dashboard.html")
+    } else {
+        path
+    };
+
+    match fs::read(&path) {
+        Ok(bytes) => {
+            let content_type = content_type_for_path(&path);
+            if method == "HEAD" {
+                write_head(stream, 200, content_type, bytes.len())?;
+            } else {
+                write_response(stream, 200, content_type, &bytes)?;
+            }
+        }
+        Err(_) => {
+            write_response(stream, 404, "text/plain; charset=utf-8", b"not found")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+) -> Result<()> {
+    write!(
+        stream,
+        "HTTP/1.1 {status} {}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        reason_phrase(status),
+        body.len()
+    )?;
+    stream.write_all(body)?;
+    stream.flush()?;
+    Ok(())
+}
+
+fn write_head(stream: &mut TcpStream, status: u16, content_type: &str, len: usize) -> Result<()> {
+    write!(
+        stream,
+        "HTTP/1.1 {status} {}\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n",
+        reason_phrase(status),
+    )?;
+    stream.flush()?;
+    Ok(())
+}
+
+fn reason_phrase(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        _ => "OK",
+    }
+}
+
+fn content_type_for_path(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+    {
+        "html" => "text/html; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "md" => "text/markdown; charset=utf-8",
+        "txt" => "text/plain; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "js" => "application/javascript; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+}
+
+fn percent_decode(value: &str) -> PathBuf {
+    let mut bytes = Vec::with_capacity(value.len());
+    let mut chars = value.as_bytes().iter().copied().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == b'%' {
+            let hi = chars.next();
+            let lo = chars.next();
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                let hex = [hi, lo];
+                if let Ok(text) = std::str::from_utf8(&hex) {
+                    if let Ok(value) = u8::from_str_radix(text, 16) {
+                        bytes.push(value);
+                        continue;
+                    }
+                }
+                bytes.extend_from_slice(&[b'%', hi, lo]);
+                continue;
+            }
+        }
+        bytes.push(ch);
+    }
+    PathBuf::from(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn dashboard_state_path(paths: &AppPaths, source_name: &str, snapshot_label: &str) -> PathBuf {
+    paths.home.join(format!(
+        "dashboard-server-{}-{}.json",
+        source_name, snapshot_label
+    ))
+}
+
+fn write_dashboard_state(path: &Path, state: &DashboardServerState) -> Result<()> {
+    fs::write(path, serde_json::to_string_pretty(state)?)
+        .with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn read_dashboard_state(path: &Path) -> Result<DashboardServerState> {
+    let body =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_str(&body).with_context(|| format!("failed to parse {}", path.display()))
+}
+
+fn is_dashboard_running(state: &DashboardServerState) -> bool {
+    TcpStream::connect_timeout(
+        &format!("{}:{}", state.host, state.port)
+            .parse()
+            .unwrap_or_else(|_| ([127, 0, 0, 1], state.port).into()),
+        Duration::from_millis(250),
+    )
+    .is_ok()
+}
+
+fn stop_process(pid: u32) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let status = Command::new("kill")
+            .arg(pid.to_string())
+            .status()
+            .context("failed to execute kill")?;
+        if !status.success() {
+            bail!("failed to stop dashboard process `{pid}`");
+        }
+        return Ok(());
+    }
+
+    #[cfg(windows)]
+    {
+        let status = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status()
+            .context("failed to execute taskkill")?;
+        if !status.success() {
+            bail!("failed to stop dashboard process `{pid}`");
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        bail!("dashboard stop is not supported on this platform");
+    }
+
+    #[allow(unreachable_code)]
+    Ok(())
+}
+
+fn dashboard_url(host: &str, port: u16) -> String {
+    let display_host = if host == "0.0.0.0" { "127.0.0.1" } else { host };
+    format!("http://{display_host}:{port}/")
 }
 
 fn resolve_snapshot_dir(
