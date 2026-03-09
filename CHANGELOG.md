@@ -1,5 +1,19 @@
 # Changelog
 
+## `1.2.0` - 2026-03-09
+
+Added:
+
+- multi-engine normalization profiles for Mintlify, Docusaurus, GitBook, MkDocs, Nextra, and VitePress-style docs markup
+- regression tests for representative docs-engine patterns and canonical duplicate-page import selection
+- profile tracking in per-page normalization summaries
+
+Changed:
+
+- normalization now uses `markdown_cleanup_v2`
+- OmniMem import now prefers cleaner canonical URLs when multiple pages share the same normalized content hash
+- Markdown cleanup now strips common MDX import/export lines, GitBook blocks, MkDocs tab/admonition markers, and more docs-engine-specific wrappers
+
 ## `1.1.0` - 2026-03-09
 
 Added:

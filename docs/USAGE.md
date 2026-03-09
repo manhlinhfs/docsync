@@ -160,4 +160,4 @@ docsync migrate --json
 
 ## Notes
 
-`v1.1.0` includes incremental diff-aware sync, markdown/MDX normalization before hashing or import, duplicate-content skipping during OmniMem import, headless browser fallback, runtime migration, shell completions, and release automation on top of the markdown-first, HTML fallback, git-native, and OmniMem flows added earlier.
+`v1.2.0` adds multi-engine normalization profiles for Mintlify, Docusaurus, GitBook, MkDocs, Nextra, and VitePress-style docs content on top of the incremental diff-aware sync, normalized import, headless browser fallback, runtime migration, shell completions, and release automation already present in earlier versions.

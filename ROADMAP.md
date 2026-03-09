@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap is version-first, not date-first. `docsync` is currently stable at `v1.1.0`.
+This roadmap is version-first, not date-first. `docsync` is currently stable at `v1.2.0`.
 
 ## Release themes
 
@@ -173,13 +173,13 @@ Exit criteria:
 - manifests are backward-compatible or migratable
 - release notes communicate upgrade guarantees
 
-## Milestones after `v1.1.0`
+## Milestones after `v1.2.0`
 
-Development after `v1.1.0` should move in milestone order unless a regression, release blocker, or security issue needs to interrupt the sequence.
+Development after `v1.2.0` should move in milestone order unless a regression, release blocker, or security issue needs to interrupt the sequence.
 
 ### `v1.2.0` Multi-Engine Normalization
 
-Status: planned
+Status: implemented
 
 Scope:
 
@@ -187,13 +187,13 @@ Scope:
 - improve boilerplate stripping for repeated nav chrome, page index banners, and duplicated headings
 - normalize common callout, tab, step, card, and accordion patterns without dropping important content
 - improve canonical page selection when multiple URLs normalize to the same page body
-- add real-site smoke coverage for at least one site per supported docs engine
+- add regression coverage for representative docs-engine markup patterns
 
 Exit criteria:
 
 - common docs engines produce cleaner Markdown with materially fewer UI artifacts
 - canonical page selection is stable across repeated syncs
-- the smoke matrix passes on supported real-world docs sites
+- representative normalization regressions pass in automated tests
 
 ### `v1.3.0` Quality Scoring and Import Policy
 

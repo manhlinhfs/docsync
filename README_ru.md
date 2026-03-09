@@ -22,9 +22,9 @@
 - **JS-heavy docs** с headless fallback
 - **Git-native docs-репозиториев**
 
-Текущая stable-версия: **`1.1.0`**
+Текущая stable-версия: **`1.2.0`**
 
-Следующие этапы после `v1.1.0`: см. [ROADMAP.md](ROADMAP.md).
+Следующие этапы после `v1.2.0`: см. [ROADMAP.md](ROADMAP.md).
 
 ## **Быстрый Старт**
 
@@ -156,6 +156,8 @@ docsync sync openclaw-getting-started
 - UI-компоненты вроде callout, tabs, steps, cards, tooltip
 - лишние Markdown/MDX wrapper'ы
 - duplicate-content страницы при import в OmniMem
+
+Встроенные profile cleanup уже покрывают типовые patterns из **Mintlify**, **Docusaurus**, **GitBook**, **MkDocs**, **Nextra** и **VitePress**.
 
 Итог:
 

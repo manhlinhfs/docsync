@@ -1,4 +1,5 @@
-use std::collections::BTreeSet;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -7,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::config::AppPaths;
-use crate::models::{PageChangeStatus, SnapshotManifest};
+use crate::models::{PageChangeStatus, PageManifestEntry, SnapshotManifest};
 use crate::util::now_utc_rfc3339;
 
 const DEFAULT_OMNIMEM_PATH: &str = "/root/omnimem/omnimem";
@@ -116,26 +117,59 @@ pub fn import_snapshot(
     let mut selected_pages = 0usize;
     let mut skipped_duplicate_pages = 0usize;
     let mut importable_pages = Vec::new();
-    let mut seen_hashes = BTreeSet::new();
     let mut items = Vec::new();
 
-    for page in importable_pages_from_manifest {
+    let mut duplicate_groups: BTreeMap<String, Vec<(usize, &PageManifestEntry)>> = BTreeMap::new();
+    let mut ungrouped_pages = Vec::new();
+
+    for (index, page) in importable_pages_from_manifest.iter().enumerate() {
+        if let Some(hash) = page.sha256.as_deref() {
+            duplicate_groups
+                .entry(hash.to_string())
+                .or_default()
+                .push((index, *page));
+        } else {
+            ungrouped_pages.push((index, *page));
+        }
+    }
+
+    let mut selected_entries = Vec::new();
+    for (index, page) in ungrouped_pages {
+        selected_entries.push((index, page));
+    }
+
+    for group in duplicate_groups.into_values() {
+        if group.len() == 1 {
+            selected_entries.push(group[0]);
+            continue;
+        }
+
+        let canonical_index = choose_canonical_page(&group);
+        for (index, page) in group {
+            let Some(page_path) = page.page_path.clone() else {
+                continue;
+            };
+            if index == canonical_index {
+                selected_entries.push((index, page));
+                continue;
+            }
+            skipped_duplicate_pages += 1;
+            items.push(OmniMemImportItem {
+                page_path: page_path.display().to_string(),
+                status: "skipped_duplicate".to_string(),
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+    }
+
+    selected_entries.sort_by_key(|(index, _)| *index);
+
+    for (_, page) in selected_entries {
         let Some(page_path) = page.page_path.clone() else {
             continue;
         };
-        if let Some(hash) = page.sha256.as_deref() {
-            if !seen_hashes.insert(hash.to_string()) {
-                skipped_duplicate_pages += 1;
-                items.push(OmniMemImportItem {
-                    page_path: page_path.display().to_string(),
-                    status: "skipped_duplicate".to_string(),
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                });
-                continue;
-            }
-        }
         selected_pages += 1;
         importable_pages.push(page_path);
     }
@@ -350,6 +384,53 @@ fn should_import_page(
     )
 }
 
+fn choose_canonical_page(group: &[(usize, &PageManifestEntry)]) -> usize {
+    group
+        .iter()
+        .min_by(|left, right| compare_canonical_pages(left.1, right.1).then(left.0.cmp(&right.0)))
+        .map(|(index, _)| *index)
+        .unwrap_or(0)
+}
+
+fn compare_canonical_pages(left: &PageManifestEntry, right: &PageManifestEntry) -> Ordering {
+    canonical_sort_key(left).cmp(&canonical_sort_key(right))
+}
+
+fn canonical_sort_key(page: &PageManifestEntry) -> (u8, u8, u8, usize, usize, String) {
+    let candidate = canonical_candidate(page);
+    let normalized = candidate.trim_end_matches('/').to_string();
+    let lower = normalized.to_ascii_lowercase();
+    let has_query = normalized.contains('?') || normalized.contains('#');
+    let is_index = lower.ends_with("/index") || lower.ends_with("/index.md");
+    let has_markdown_extension = lower.ends_with(".md");
+    let depth = normalized
+        .split('/')
+        .filter(|segment| !segment.is_empty() && !segment.contains(':'))
+        .count();
+
+    (
+        u8::from(has_query),
+        u8::from(has_markdown_extension),
+        u8::from(is_index),
+        depth,
+        normalized.len(),
+        normalized,
+    )
+}
+
+fn canonical_candidate(page: &PageManifestEntry) -> String {
+    if !page.final_url.is_empty() {
+        return page.final_url.clone();
+    }
+    if !page.url.is_empty() {
+        return page.url.clone();
+    }
+    page.page_path
+        .as_deref()
+        .map(|value| value.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default()
+}
+
 fn run_omnimem(cmd: &str, args: &[&str]) -> Result<std::process::Output> {
     Command::new(cmd).args(args).output().with_context(|| {
         format!(
@@ -545,6 +626,82 @@ mod tests {
             (log.contains("first.md") && !log.contains("second.md"))
                 || (!log.contains("first.md") && log.contains("second.md"))
         );
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn prefers_cleaner_canonical_page_when_hashes_match() -> Result<()> {
+        let root = make_temp_dir("omnimem-import-canonical");
+        let paths = make_app_paths(&root);
+        let snapshot_dir = create_snapshot_fixture(&paths, "demo", "snap-4")?;
+        let clean_page = snapshot_dir.join("pages/guide.md");
+        let generated_page = snapshot_dir.join("pages/guide-index.md");
+        fs::create_dir_all(clean_page.parent().expect("page parent"))?;
+        fs::write(&clean_page, "# Guide\n")?;
+        fs::write(&generated_page, "# Guide\n")?;
+
+        let mut clean_entry = page_entry(&clean_page, crate::models::PageChangeStatus::New);
+        clean_entry.url = "https://docs.example.com/guide".to_string();
+        clean_entry.final_url = clean_entry.url.clone();
+        clean_entry.page_key = clean_entry.url.clone();
+        clean_entry.sha256 = Some("dup-guide".to_string());
+
+        let mut generated_entry = page_entry(&generated_page, crate::models::PageChangeStatus::New);
+        generated_entry.url = "https://docs.example.com/guide/index.md".to_string();
+        generated_entry.final_url = generated_entry.url.clone();
+        generated_entry.page_key = generated_entry.url.clone();
+        generated_entry.sha256 = Some("dup-guide".to_string());
+
+        let manifest = SnapshotManifest {
+            schema_version: 7,
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            source_name: "demo".to_string(),
+            entry_url: "https://example.com".to_string(),
+            source_kind: SourceKind::Website,
+            version_strategy: VersionStrategy::DateSnapshot,
+            source_ref: "snap-4".to_string(),
+            snapshot_label: "snap-4".to_string(),
+            snapshot_dir: snapshot_dir.clone(),
+            status: "fetched".to_string(),
+            previous_snapshot_label: None,
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            discovery: DiscoverySummary {
+                manifest_path: snapshot_dir.join("discovery.json"),
+                adapters: vec!["seed_page".to_string()],
+                frontier_count: 2,
+                llms_index_url: None,
+                llms_full_index_url: None,
+                sitemap_count: 0,
+            },
+            git: None,
+            fetch: None,
+            diff: None,
+            pages: vec![generated_entry, clean_entry],
+            notes: Vec::new(),
+        };
+        fs::write(
+            snapshot_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)?,
+        )?;
+
+        let fake = fake_omnimem_script(&root, "import-ok")?;
+        let result = import_snapshot(
+            &paths,
+            "demo",
+            Some("snap-4".to_string()),
+            Some(fake.to_string_lossy().to_string()),
+            false,
+            false,
+            false,
+        )?;
+
+        assert_eq!(result.selected_pages, 1);
+        assert_eq!(result.skipped_duplicate_pages, 1);
+        let log = fs::read_to_string(root.join("omnimem-invocations.log"))?;
+        assert!(log.contains("guide.md"));
+        assert!(!log.contains("guide-index.md"));
         fs::remove_dir_all(root)?;
         Ok(())
     }

@@ -22,9 +22,9 @@ It works well for:
 - **JS-heavy docs** with optional headless fallback
 - **Git-native docs repos**
 
-Current stable version: **`1.1.0`**
+Current stable version: **`1.2.0`**
 
-Planned milestones after `v1.1.0`: see [ROADMAP.md](ROADMAP.md).
+Planned milestones after `v1.2.0`: see [ROADMAP.md](ROADMAP.md).
 
 ## **Quick Start**
 
@@ -156,6 +156,8 @@ Before hashing or import, it cleans common docs noise such as:
 - UI components like callouts, tabs, steps, cards, and tooltips
 - noisy Markdown/MDX wrappers
 - duplicate-content pages during OmniMem import
+
+Built-in cleanup profiles now cover common patterns from **Mintlify**, **Docusaurus**, **GitBook**, **MkDocs**, **Nextra**, and **VitePress**.
 
 That means the content under `pages/` is the **normalized** version.
 The content under `raw/` is the **original fetched body**.

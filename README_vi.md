@@ -22,9 +22,9 @@ Phù hợp nhất với:
 - **Docs render bằng JS** với headless fallback
 - **Docs lấy từ repo Git**
 
-Phiên bản stable hiện tại: **`1.1.0`**
+Phiên bản stable hiện tại: **`1.2.0`**
 
-Các mốc phát triển tiếp theo sau `v1.1.0`: xem [ROADMAP.md](ROADMAP.md).
+Các mốc phát triển tiếp theo sau `v1.2.0`: xem [ROADMAP.md](ROADMAP.md).
 
 ## **Bắt Đầu Nhanh**
 
@@ -156,6 +156,8 @@ Trước khi hash hoặc import, công cụ sẽ làm sạch các phần nhiễu
 - component UI như callout, tab, step, card, tooltip
 - wrapper Markdown/MDX không cần thiết
 - các trang trùng nội dung khi import vào OmniMem
+
+Hiện tại các profile làm sạch đã bao phủ những pattern phổ biến của **Mintlify**, **Docusaurus**, **GitBook**, **MkDocs**, **Nextra** và **VitePress**.
 
 Điều đó có nghĩa:
 
