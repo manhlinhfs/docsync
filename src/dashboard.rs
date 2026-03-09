@@ -187,27 +187,16 @@ pub fn serve_dashboard(
     }
 
     let exe = std::env::current_exe().context("failed to resolve current executable")?;
-    let mut child = Command::new(exe);
-    child
-        .arg("--home")
-        .arg(&paths.home)
-        .arg("dashboard-host")
-        .arg("--root")
-        .arg(
-            built
-                .output_path
-                .parent()
-                .context("dashboard output path is missing a parent directory")?,
-        )
-        .arg("--host")
-        .arg(host)
-        .arg("--port")
-        .arg(port.to_string())
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let child = child.spawn().context("failed to start dashboard server")?;
-    let pid = child.id();
+    let pid = start_detached_dashboard_host(
+        &exe,
+        &paths.home,
+        built
+            .output_path
+            .parent()
+            .context("dashboard output path is missing a parent directory")?,
+        host,
+        port,
+    )?;
 
     let state = DashboardServerState {
         source_name: built.source_name.clone(),
@@ -267,24 +256,7 @@ pub fn serve_global_dashboard(
     }
 
     let exe = std::env::current_exe().context("failed to resolve current executable")?;
-    let mut child = Command::new(exe);
-    child
-        .arg("--home")
-        .arg(&paths.home)
-        .arg("dashboard-host")
-        .arg("--root")
-        .arg(&paths.home)
-        .arg("--host")
-        .arg(host)
-        .arg("--port")
-        .arg(port.to_string())
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let child = child
-        .spawn()
-        .context("failed to start global dashboard server")?;
-    let pid = child.id();
+    let pid = start_detached_dashboard_host(&exe, &paths.home, &paths.home, host, port)?;
 
     let state = DashboardServerState {
         source_name: "all".to_string(),
@@ -1145,6 +1117,55 @@ fn stop_process(pid: u32) -> Result<()> {
 fn dashboard_url(host: &str, port: u16) -> String {
     let display_host = if host == "0.0.0.0" { "127.0.0.1" } else { host };
     format!("http://{display_host}:{port}/")
+}
+
+fn start_detached_dashboard_host(
+    exe: &Path,
+    home: &Path,
+    root: &Path,
+    host: &str,
+    port: u16,
+) -> Result<u32> {
+    #[cfg(unix)]
+    {
+        let child = Command::new("setsid")
+            .arg(exe)
+            .arg("--home")
+            .arg(home)
+            .arg("dashboard-host")
+            .arg("--root")
+            .arg(root)
+            .arg("--host")
+            .arg(host)
+            .arg("--port")
+            .arg(port.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .context("failed to start detached dashboard server with setsid")?;
+        return Ok(child.id());
+    }
+
+    #[cfg(not(unix))]
+    {
+        let child = Command::new(exe)
+            .arg("--home")
+            .arg(home)
+            .arg("dashboard-host")
+            .arg("--root")
+            .arg(root)
+            .arg("--host")
+            .arg(host)
+            .arg("--port")
+            .arg(port.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .context("failed to start dashboard server")?;
+        Ok(child.id())
+    }
 }
 
 fn resolve_snapshot_dir(

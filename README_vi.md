@@ -24,9 +24,9 @@ Phù hợp nhất với:
 - **Docs render bằng JS** với headless fallback
 - **Docs lấy từ repo Git**
 
-Phiên bản stable hiện tại: **`1.3.2`**
+Phiên bản stable hiện tại: **`1.3.3`**
 
-Các mốc phát triển tiếp theo sau `v1.3.2`: xem [ROADMAP.md](ROADMAP.md).
+Các mốc phát triển tiếp theo sau `v1.3.3`: xem [ROADMAP.md](ROADMAP.md).
 
 ## **Bắt Đầu Nhanh**
 
@@ -135,6 +135,8 @@ docsync sync openclaw-getting-started
 ```
 
 Phù hợp khi bạn chỉ muốn nhập một page, không cần crawl cả site.
+
+Nếu URL trang nhìn rõ là docs, ví dụ `/docs/...`, `/guides/...`, hoặc `/start/...`, và cùng host đó có `llms.txt` hoặc sitemap, `docsync` có thể tự nâng page seed này thành full discovery của cả bộ docs.
 
 ## **Cách Nghĩ Về `docsync`**
 

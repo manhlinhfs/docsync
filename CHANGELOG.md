@@ -1,5 +1,12 @@
 # Changelog
 
+## `1.3.3` - 2026-03-09
+
+Changed:
+
+- website discovery now auto-promotes docs-like page seeds such as `/docs/...` into full root-index discovery when the same host exposes `llms.txt` or sitemap indexes
+- detached dashboard hosting is now launched more cleanly on Unix, avoiding stale background-server failures and removing a compiler warning
+
 ## `1.3.2` - 2026-03-09
 
 Added:

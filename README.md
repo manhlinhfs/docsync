@@ -24,9 +24,9 @@ It works well for:
 - **JS-heavy docs** with optional headless fallback
 - **Git-native docs repos**
 
-Current stable version: **`1.3.2`**
+Current stable version: **`1.3.3`**
 
-Planned milestones after `v1.3.2`: see [ROADMAP.md](ROADMAP.md).
+Planned milestones after `v1.3.3`: see [ROADMAP.md](ROADMAP.md).
 
 ## **Quick Start**
 
@@ -135,6 +135,8 @@ docsync sync openclaw-getting-started
 ```
 
 This is useful when you want to import one page without expanding the whole site.
+
+If the page URL clearly looks like docs, such as `/docs/...`, `/guides/...`, or `/start/...`, and the same host exposes `llms.txt` or sitemap indexes, `docsync` can automatically promote that page seed into full-site docs discovery.
 
 ## **How `docsync` Thinks**
 

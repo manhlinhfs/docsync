@@ -1,6 +1,6 @@
 [package]
 name = "docsync"
-version = "1.3.2"
+version = "1.3.3"
 edition = "2024"
 description = "Binary-first documentation sync CLI for AI retrieval workflows"
 license = "MIT"

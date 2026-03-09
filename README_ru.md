@@ -24,9 +24,9 @@
 - **JS-heavy docs** с headless fallback
 - **Git-native docs-репозиториев**
 
-Текущая stable-версия: **`1.3.2`**
+Текущая stable-версия: **`1.3.3`**
 
-Следующие этапы после `v1.3.2`: см. [ROADMAP.md](ROADMAP.md).
+Следующие этапы после `v1.3.3`: см. [ROADMAP.md](ROADMAP.md).
 
 ## **Быстрый Старт**
 
@@ -135,6 +135,8 @@ docsync sync openclaw-getting-started
 ```
 
 Полезно, когда нужно импортировать только один page seed без полного обхода сайта.
+
+Если URL явно похож на docs-страницу, например `/docs/...`, `/guides/...` или `/start/...`, и на том же хосте доступны `llms.txt` или sitemap, `docsync` может автоматически повысить такой page seed до полного discovery по всему docs-сайту.
 
 ## **Простая Модель Работы**
 

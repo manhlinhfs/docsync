@@ -98,6 +98,8 @@ docsync source add postiz-page \
   --version-strategy date-snapshot
 ```
 
+If the page URL is obviously docs-like, such as `/docs/...`, `/guides/...`, or `/start/...`, and the same host publishes `llms.txt` or sitemap indexes, `docsync` may automatically expand that seed into a full docs frontier instead of keeping it as a single page.
+
 ## Probe a direct import asset
 
 ```bash

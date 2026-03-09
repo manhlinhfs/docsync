@@ -29,7 +29,7 @@ pub fn discover_source(
     let mut sitemap_urls: Vec<String> = Vec::new();
     let mut notes = Vec::new();
     let mut frontier = Vec::new();
-    let (detected_input_kind, suggested_mode);
+    let (detected_input_kind, mut suggested_mode);
 
     if is_llms_path(&lower_path) {
         detected_input_kind =
@@ -81,6 +81,14 @@ pub fn discover_source(
         llms_index_url = report.llms.index_url.clone();
         llms_full_index_url = report.llms.full_index_url.clone();
         sitemap_urls = report.robots.sitemaps.clone();
+
+        if should_promote_seed_to_root_discovery(&requested, &final_url, &report) {
+            suggested_mode = SuggestedMode::DiscoveryRoot;
+            notes.push(
+                "Promoted this docs-like page seed to root discovery because the same host exposes llms.txt or sitemap indexes."
+                    .to_string(),
+            );
+        }
 
         if matches!(suggested_mode, SuggestedMode::DiscoveryRoot) {
             if report.llms.available {
@@ -412,6 +420,66 @@ fn is_llms_frontier_candidate(base_url: &Url, candidate: &Url) -> bool {
     candidate.host_str().is_some() && candidate.host_str() == base_url.host_str()
 }
 
+fn should_promote_seed_to_root_discovery(
+    requested: &Url,
+    final_url: &Url,
+    report: &probe::ProbeReport,
+) -> bool {
+    if matches!(report.suggested_mode, SuggestedMode::DiscoveryRoot) {
+        return false;
+    }
+
+    if report.detected_input_kind != DetectedInputKind::ContentPage {
+        return false;
+    }
+
+    if !same_host(requested, final_url) {
+        return false;
+    }
+
+    if !looks_like_docs_page(requested.path()) {
+        return false;
+    }
+
+    report.llms.available || !report.robots.sitemaps.is_empty()
+}
+
+fn same_host(left: &Url, right: &Url) -> bool {
+    left.host_str().is_some() && left.host_str() == right.host_str()
+}
+
+fn looks_like_docs_page(path: &str) -> bool {
+    let trimmed = path.trim_matches('/');
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    let segments = lower.split('/').collect::<Vec<_>>();
+    let docs_markers = [
+        "doc",
+        "docs",
+        "documentation",
+        "guide",
+        "guides",
+        "manual",
+        "reference",
+        "references",
+        "learn",
+        "tutorial",
+        "tutorials",
+        "api",
+        "apis",
+        "sdk",
+        "start",
+        "getting-started",
+    ];
+
+    segments
+        .iter()
+        .any(|segment| docs_markers.iter().any(|marker| segment.contains(marker)))
+}
+
 fn parse_absolute_http_url(value: &str) -> Option<Url> {
     let url = Url::parse(value).ok()?;
     match url.scheme() {
@@ -502,8 +570,11 @@ fn canonicalize_url(url: &Url) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DiscoveryOrigin, extract_markdown_link_targets, parse_llms_urls, parse_sitemap_document,
-        resolve_llms_link,
+        DiscoveryOrigin, extract_markdown_link_targets, looks_like_docs_page, parse_llms_urls,
+        parse_sitemap_document, resolve_llms_link, should_promote_seed_to_root_discovery,
+    };
+    use crate::probe::{
+        DetectedInputKind, LlmsReport, MarkdownReport, ProbeReport, RobotsReport, SuggestedMode,
     };
     use url::Url;
 
@@ -597,5 +668,92 @@ mod tests {
     #[test]
     fn discovery_origin_serialization_order_is_stable() {
         assert!(DiscoveryOrigin::LlmsTxt < DiscoveryOrigin::Sitemap);
+    }
+
+    #[test]
+    fn detects_docs_like_paths() {
+        assert!(looks_like_docs_page("/docs/overview"));
+        assert!(looks_like_docs_page("/guides/auth/overview"));
+        assert!(looks_like_docs_page("/start/getting-started"));
+        assert!(!looks_like_docs_page("/blog/launch-post"));
+        assert!(!looks_like_docs_page("/pricing"));
+    }
+
+    #[test]
+    fn promotes_docs_page_seed_when_root_indexes_exist() {
+        let requested = Url::parse("https://orm.drizzle.team/docs/overview").expect("requested");
+        let final_url = requested.clone();
+        let report = ProbeReport {
+            requested_url: requested.to_string(),
+            final_url: final_url.to_string(),
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            markdown_supported: false,
+            markdown: MarkdownReport {
+                content_type: Some("text/html".to_string()),
+                x_markdown_tokens: None,
+                x_original_tokens: None,
+                content_signal: None,
+                link_header: None,
+            },
+            llms: LlmsReport {
+                discovered_from: Some("guessed /llms.txt".to_string()),
+                index_url: Some("https://orm.drizzle.team/llms.txt".to_string()),
+                full_index_url: Some("https://orm.drizzle.team/llms-full.txt".to_string()),
+                available: true,
+                page_links: 195,
+                preview: Vec::new(),
+            },
+            robots: RobotsReport {
+                robots_url: "https://orm.drizzle.team/robots.txt".to_string(),
+                robots_status: Some(200),
+                sitemaps: vec!["https://orm.drizzle.team/sitemap-index.xml".to_string()],
+                first_sitemap_url_count: Some(1),
+            },
+            recommendations: Vec::new(),
+        };
+
+        assert!(should_promote_seed_to_root_discovery(
+            &requested, &final_url, &report
+        ));
+    }
+
+    #[test]
+    fn does_not_promote_non_docs_page_seed() {
+        let requested = Url::parse("https://example.com/blog/launch-post").expect("requested");
+        let final_url = requested.clone();
+        let report = ProbeReport {
+            requested_url: requested.to_string(),
+            final_url: final_url.to_string(),
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            markdown_supported: false,
+            markdown: MarkdownReport {
+                content_type: Some("text/html".to_string()),
+                x_markdown_tokens: None,
+                x_original_tokens: None,
+                content_signal: None,
+                link_header: None,
+            },
+            llms: LlmsReport {
+                discovered_from: Some("guessed /llms.txt".to_string()),
+                index_url: Some("https://example.com/llms.txt".to_string()),
+                full_index_url: None,
+                available: true,
+                page_links: 50,
+                preview: Vec::new(),
+            },
+            robots: RobotsReport {
+                robots_url: "https://example.com/robots.txt".to_string(),
+                robots_status: Some(200),
+                sitemaps: vec!["https://example.com/sitemap.xml".to_string()],
+                first_sitemap_url_count: Some(1),
+            },
+            recommendations: Vec::new(),
+        };
+
+        assert!(!should_promote_seed_to_root_discovery(
+            &requested, &final_url, &report
+        ));
     }
 }
