@@ -16,6 +16,7 @@ use crate::models::{
 use crate::network::apply_proxy_to_git_command;
 use crate::normalize::normalize_markdown;
 use crate::probe::{DetectedInputKind, SuggestedMode};
+use crate::quality::{score_markdown_quality, summarize_quality};
 use crate::util::{ensure_directory, now_utc_rfc3339};
 
 const NAV_MANIFEST_NAMES: &[&str] = &["meta.json", "docs.json", "mint.json"];
@@ -128,6 +129,7 @@ pub fn sync_git_source(
                 reused_pages: 0,
                 normalized_pages: 0,
                 normalization_changed_pages: 0,
+                quality: None,
                 method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
             },
             Vec::new(),
@@ -200,6 +202,7 @@ fn snapshot_git_pages(
     let mut pages = Vec::new();
     let mut reused_pages = 0usize;
     let mut normalization_changed_pages = 0usize;
+    let mut quality_pages = Vec::new();
     let mut seen_keys = std::collections::BTreeSet::new();
 
     for file_path in markdown_files {
@@ -212,6 +215,7 @@ fn snapshot_git_pages(
         let bytes = fs::read(file_path)
             .with_context(|| format!("failed to read source docs file {}", file_path.display()))?;
         let normalized = normalize_markdown(&String::from_utf8_lossy(&bytes));
+        let quality = score_markdown_quality(&normalized.markdown);
         write_bytes(&page_path, normalized.markdown.as_bytes())?;
         let sha256 = sha256_hex(normalized.markdown.as_bytes());
         let change_status = match previous_pages.and_then(|pages| pages.get(&relative)) {
@@ -253,8 +257,10 @@ fn snapshot_git_pages(
             raw_path: raw_path.clone(),
             rendered_raw_path: None,
             normalization: Some(normalized.summary.clone()),
+            quality: Some(quality.clone()),
         };
         write_json(&metadata_path, &metadata)?;
+        quality_pages.push(quality.clone());
 
         pages.push(PageManifestEntry {
             page_key: relative.clone(),
@@ -277,6 +283,7 @@ fn snapshot_git_pages(
             last_modified: None,
             byte_size: normalized.markdown.len() as u64,
             normalization: Some(normalized.summary),
+            quality: Some(quality),
         });
     }
 
@@ -303,6 +310,7 @@ fn snapshot_git_pages(
                     last_modified: None,
                     byte_size: 0,
                     normalization: previous.normalization.clone(),
+                    quality: previous.quality.clone(),
                 });
             }
         }
@@ -316,6 +324,7 @@ fn snapshot_git_pages(
             reused_pages,
             normalized_pages: markdown_files.len(),
             normalization_changed_pages,
+            quality: Some(summarize_quality(quality_pages.iter())),
             method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
         },
         pages,
@@ -699,6 +708,7 @@ mod tests {
                     etag: None,
                     last_modified: None,
                     normalization: None,
+                    quality: None,
                 },
             ),
             (
@@ -716,6 +726,7 @@ mod tests {
                     etag: None,
                     last_modified: None,
                     normalization: None,
+                    quality: None,
                 },
             ),
         ]);

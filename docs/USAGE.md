@@ -139,10 +139,31 @@ When a previous snapshot exists, `docsync sync` reports:
 docsync import postiz-page --ref snapshot-20260309
 docsync import supabase --ref master --dry-run --json
 docsync import supabase --ref master --all-pages
+docsync import supabase --ref master --include-low-signal
 ```
 
 Incremental snapshots import only `new` and `changed` pages by default.
 Duplicate normalized pages inside the same snapshot are skipped by default during import.
+Low-signal pages are also skipped by default unless you pass `--include-low-signal`.
+
+## Build a local dashboard
+
+```bash
+docsync dashboard openclaw --json
+docsync dashboard supabase --ref snapshot-20260309 --output ./supabase-dashboard.html
+```
+
+The dashboard is a static HTML file you can open in any browser. It shows page quality, import risk, fetch method, and change state.
+
+## Send a Telegram summary
+
+```bash
+export DOCSYNC_TELEGRAM_BOT_TOKEN=123456:ABCDEF
+export DOCSYNC_TELEGRAM_CHAT_ID=-1001234567890
+
+docsync notify telegram openclaw
+docsync notify telegram supabase --ref snapshot-20260309 --json
+```
 
 ## Verify a snapshot with OmniMem search
 
@@ -160,4 +181,4 @@ docsync migrate --json
 
 ## Notes
 
-`v1.2.0` adds multi-engine normalization profiles for Mintlify, Docusaurus, GitBook, MkDocs, Nextra, and VitePress-style docs content on top of the incremental diff-aware sync, normalized import, headless browser fallback, runtime migration, shell completions, and release automation already present in earlier versions.
+`v1.3.0` adds page-quality scoring, low-signal import filtering, a local HTML dashboard, and Telegram summary notifications on top of the multi-engine normalization, incremental sync, normalized import, headless browser fallback, runtime migration, shell completions, and release automation already present in earlier versions.

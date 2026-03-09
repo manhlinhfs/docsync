@@ -17,6 +17,7 @@ use crate::models::{
 };
 use crate::network::build_http_client;
 use crate::normalize::normalize_markdown;
+use crate::quality::{score_markdown_quality, summarize_quality};
 use crate::util::{ensure_directory, now_utc_rfc3339};
 
 #[derive(Debug, Serialize)]
@@ -49,6 +50,7 @@ pub fn fetch_snapshot_pages(
     let mut reused_pages = 0usize;
     let mut normalized_pages = 0usize;
     let mut normalization_changed_pages = 0usize;
+    let mut quality_pages = Vec::new();
     let mut seen_keys = BTreeSet::new();
 
     for page in frontier {
@@ -81,6 +83,9 @@ pub fn fetch_snapshot_pages(
                 .is_some_and(|value| value.changed)
             {
                 normalization_changed_pages += 1;
+            }
+            if let Some(quality) = fetched.quality.as_ref() {
+                quality_pages.push(quality.clone());
             }
         } else {
             skipped_pages += 1;
@@ -115,6 +120,7 @@ pub fn fetch_snapshot_pages(
                     last_modified: previous.last_modified.clone(),
                     byte_size: 0,
                     normalization: previous.normalization.clone(),
+                    quality: previous.quality.clone(),
                 });
             }
         }
@@ -128,6 +134,7 @@ pub fn fetch_snapshot_pages(
             reused_pages,
             normalized_pages,
             normalization_changed_pages,
+            quality: Some(summarize_quality(quality_pages.iter())),
             method_counts,
         },
         pages: manifest_pages,
@@ -237,6 +244,7 @@ fn fetch_one_page(
                         .unwrap_or_else(|| raw_root.join(format!("{stem}.missing.body"))),
                     rendered_raw_path: rendered_raw_output_path.clone(),
                     normalization: previous.normalization.clone(),
+                    quality: previous.quality.clone(),
                 };
                 write_json(&metadata_path, &metadata)?;
             }
@@ -268,6 +276,7 @@ fn fetch_one_page(
                 last_modified: previous.last_modified.clone(),
                 byte_size,
                 normalization: previous.normalization.clone(),
+                quality: previous.quality.clone(),
             });
         }
     }
@@ -283,6 +292,7 @@ fn fetch_one_page(
     if markdown_supported && (200..300).contains(&status_code) {
         let markdown = String::from_utf8_lossy(&body_vec);
         let normalized = normalize_markdown(&markdown);
+        let quality = score_markdown_quality(&normalized.markdown);
         let normalized_bytes = normalized.markdown.as_bytes();
         let byte_size = normalized_bytes.len() as u64;
         write_bytes(&page_path, normalized_bytes)?;
@@ -313,6 +323,7 @@ fn fetch_one_page(
             raw_path: raw_path.clone(),
             rendered_raw_path: None,
             normalization: Some(normalized.summary.clone()),
+            quality: Some(quality.clone()),
         };
         write_json(&metadata_path, &metadata)?;
 
@@ -335,6 +346,7 @@ fn fetch_one_page(
             last_modified,
             byte_size,
             normalization: Some(normalized.summary),
+            quality: Some(quality),
         });
     }
 
@@ -357,6 +369,7 @@ fn fetch_one_page(
         }
 
         let normalized = normalize_markdown(&final_markdown);
+        let quality = score_markdown_quality(&normalized.markdown);
         let byte_size = normalized.markdown.len() as u64;
         write_bytes(&page_path, normalized.markdown.as_bytes())?;
         let content_hash = sha256_hex(normalized.markdown.as_bytes());
@@ -386,6 +399,7 @@ fn fetch_one_page(
             raw_path: raw_path.clone(),
             rendered_raw_path: rendered_raw_output_path.clone(),
             normalization: Some(normalized.summary.clone()),
+            quality: Some(quality.clone()),
         };
         write_json(&metadata_path, &metadata)?;
 
@@ -408,6 +422,7 @@ fn fetch_one_page(
             last_modified,
             byte_size,
             normalization: Some(normalized.summary),
+            quality: Some(quality),
         });
     }
 
@@ -435,6 +450,7 @@ fn fetch_one_page(
         last_modified,
         byte_size,
         normalization: None,
+        quality: None,
     })
 }
 

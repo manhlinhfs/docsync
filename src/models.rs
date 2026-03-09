@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::AppPaths;
 use crate::normalize::NormalizationSummary;
 use crate::probe::{DetectedInputKind, SuggestedMode};
+use crate::quality::{PageQualitySummary, QualitySummary};
 use crate::util::now_utc_rfc3339;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,6 +168,8 @@ pub struct FetchSummary {
     pub normalized_pages: usize,
     #[serde(default)]
     pub normalization_changed_pages: usize,
+    #[serde(default)]
+    pub quality: Option<QualitySummary>,
     pub method_counts: BTreeMap<String, usize>,
 }
 
@@ -220,6 +223,8 @@ pub struct PageManifestEntry {
     pub byte_size: u64,
     #[serde(default)]
     pub normalization: Option<NormalizationSummary>,
+    #[serde(default)]
+    pub quality: Option<PageQualitySummary>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Eq, PartialEq)]
@@ -310,4 +315,6 @@ pub struct PageMetadata {
     pub rendered_raw_path: Option<PathBuf>,
     #[serde(default)]
     pub normalization: Option<NormalizationSummary>,
+    #[serde(default)]
+    pub quality: Option<PageQualitySummary>,
 }

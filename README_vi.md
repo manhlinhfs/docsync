@@ -13,6 +13,8 @@ Với một công cụ duy nhất, bạn có thể:
 - **Làm sạch** Markdown/MDX trước khi hash hoặc import
 - **Theo dõi thay đổi** giữa các snapshot
 - **Import** chỉ những trang mới hoặc đã thay đổi vào OmniMem
+- **Xem lại dữ liệu** bằng dashboard local trên trình duyệt
+- **Gửi thông báo** tóm tắt sang Telegram bot
 
 Phù hợp nhất với:
 
@@ -22,9 +24,9 @@ Phù hợp nhất với:
 - **Docs render bằng JS** với headless fallback
 - **Docs lấy từ repo Git**
 
-Phiên bản stable hiện tại: **`1.2.0`**
+Phiên bản stable hiện tại: **`1.3.0`**
 
-Các mốc phát triển tiếp theo sau `v1.2.0`: xem [ROADMAP.md](ROADMAP.md).
+Các mốc phát triển tiếp theo sau `v1.3.0`: xem [ROADMAP.md](ROADMAP.md).
 
 ## **Bắt Đầu Nhanh**
 
@@ -164,6 +166,21 @@ Hiện tại các profile làm sạch đã bao phủ những pattern phổ biế
 - **`pages/`** chứa nội dung Markdown đã được làm sạch
 - **`raw/`** chứa response gốc lấy từ nguồn
 
+## **Chấm Điểm Chất Lượng Và Xem Lại Dữ Liệu**
+
+Mỗi page đã lưu bây giờ có thêm điểm chất lượng dựa trên:
+
+- có tiêu đề chuẩn hay không
+- mật độ nội dung text
+- còn sót HTML hoặc MDX bao nhiêu
+- độ dài và cấu trúc nội dung
+
+Tạo dashboard HTML local để mở bằng trình duyệt:
+
+```bash
+docsync dashboard openclaw
+```
+
 ## **Incremental Sync**
 
 Nếu source đã có snapshot cũ, `docsync` sẽ phân loại page thành:
@@ -184,6 +201,23 @@ Muốn import lại toàn bộ:
 
 ```bash
 docsync import openclaw --all-pages
+```
+
+Muốn vẫn import cả các page low-signal:
+
+```bash
+docsync import openclaw --include-low-signal
+```
+
+## **Thông Báo Telegram**
+
+Gửi tóm tắt snapshot sang Telegram bot:
+
+```bash
+export DOCSYNC_TELEGRAM_BOT_TOKEN=123456:ABCDEF
+export DOCSYNC_TELEGRAM_CHAT_ID=-1001234567890
+
+docsync notify telegram openclaw
 ```
 
 ## **Proxy Và Headless**

@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod dashboard;
 mod discovery;
 mod fetch;
 mod git_sync;
@@ -11,8 +12,10 @@ mod network;
 mod normalize;
 mod omnimem;
 mod probe;
+mod quality;
 mod sources;
 mod sync;
+mod telegram;
 mod util;
 
 use std::path::PathBuf;
@@ -22,13 +25,15 @@ use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
 use serde::Serialize;
 
-use crate::cli::{Cli, Commands, CompletionShell, SourceCommands};
+use crate::cli::{Cli, Commands, CompletionShell, NotifyCommands, SourceCommands};
 use crate::config::{ensure_layout, load_config, resolve_paths};
+use crate::dashboard::build_dashboard;
 use crate::migrate::migrate_runtime;
 use crate::models::NewSource;
 use crate::omnimem::{import_snapshot, verify_snapshot};
 use crate::sources::{add_source, get_source, list_sources};
 use crate::sync::sync_source;
+use crate::telegram::send_telegram_snapshot_summary;
 
 fn main() {
     if let Err(error) = run() {
@@ -94,6 +99,45 @@ fn run() -> Result<()> {
                 println!("Manifests rewritten: {}", result.manifests_rewritten);
             }
         }
+        Commands::Dashboard(args) => {
+            ensure_layout(&paths)?;
+            let result = build_dashboard(&paths, &args.name, args.reference, args.output)?;
+            if args.json {
+                print_json(&result)?;
+            } else {
+                println!("Source: {}", result.source_name);
+                println!("Snapshot: {}", result.snapshot_label);
+                println!("Pages shown: {}", result.pages_shown);
+                println!("High quality pages: {}", result.high_quality_pages);
+                println!("Medium quality pages: {}", result.medium_quality_pages);
+                println!("Low quality pages: {}", result.low_quality_pages);
+                println!("Output: {}", result.output_path.display());
+            }
+        }
+        Commands::Notify { command } => {
+            ensure_layout(&paths)?;
+            match command {
+                NotifyCommands::Telegram(args) => {
+                    let result = send_telegram_snapshot_summary(
+                        &paths,
+                        &args.name,
+                        args.reference,
+                        args.bot_token,
+                        args.chat_id,
+                        cli.proxy.as_deref(),
+                    )?;
+                    if args.json {
+                        print_json(&result)?;
+                    } else {
+                        println!("Source: {}", result.source_name);
+                        println!("Snapshot: {}", result.snapshot_label);
+                        println!("Chat ID: {}", result.chat_id);
+                        println!("Message length: {}", result.message_length);
+                        println!("API endpoint: {}", result.api_endpoint);
+                    }
+                }
+            }
+        }
         Commands::Probe(args) => {
             ensure_layout(&paths)?;
             let config = load_config(&paths)?;
@@ -153,6 +197,7 @@ fn run() -> Result<()> {
                 args.direct,
                 args.dry_run,
                 args.all_pages,
+                args.include_low_signal,
             )?;
             if args.json {
                 print_json(&result)?;
@@ -166,6 +211,10 @@ fn run() -> Result<()> {
                 println!(
                     "Skipped unchanged pages: {}",
                     result.skipped_unchanged_pages
+                );
+                println!(
+                    "Skipped low-signal pages: {}",
+                    result.skipped_low_signal_pages
                 );
                 println!("OmniMem command: {}", result.omnimem_cmd);
                 println!("Summary: {}", result.summary_path.display());

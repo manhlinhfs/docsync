@@ -30,6 +30,11 @@ pub enum Commands {
     Paths(PathsArgs),
     Completions(CompletionsArgs),
     Migrate(MigrateArgs),
+    Dashboard(DashboardArgs),
+    Notify {
+        #[command(subcommand)]
+        command: NotifyCommands,
+    },
     Probe(ProbeArgs),
     Import(ImportArgs),
     Source {
@@ -61,6 +66,20 @@ pub struct ProbeArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct DashboardArgs {
+    pub name: String,
+
+    #[arg(long = "ref")]
+    pub reference: Option<String>,
+
+    #[arg(long)]
+    pub output: Option<PathBuf>,
+
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct ImportArgs {
     pub name: String,
 
@@ -78,6 +97,9 @@ pub struct ImportArgs {
 
     #[arg(long)]
     pub all_pages: bool,
+
+    #[arg(long)]
+    pub include_low_signal: bool,
 
     #[arg(long)]
     pub json: bool,
@@ -110,6 +132,28 @@ pub enum SourceCommands {
     Add(SourceAddArgs),
     List(SourceListArgs),
     Show(SourceShowArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum NotifyCommands {
+    Telegram(TelegramNotifyArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct TelegramNotifyArgs {
+    pub name: String,
+
+    #[arg(long = "ref")]
+    pub reference: Option<String>,
+
+    #[arg(long)]
+    pub bot_token: Option<String>,
+
+    #[arg(long)]
+    pub chat_id: Option<String>,
+
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

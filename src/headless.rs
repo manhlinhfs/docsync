@@ -89,6 +89,8 @@ fn detect_browser_in_path() -> Option<String> {
 mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    use std::thread;
+    use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use anyhow::Result;
@@ -130,6 +132,7 @@ mod tests {
             "#!/usr/bin/env bash\nprintf '<html><body><main>Rendered</main></body></html>'\n",
         )?;
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755))?;
+        thread::sleep(Duration::from_millis(10));
 
         let rendered = render_url(&script_path.to_string_lossy(), "https://example.com", None)?;
         assert!(rendered.contains("Rendered"));

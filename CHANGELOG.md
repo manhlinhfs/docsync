@@ -1,5 +1,21 @@
 # Changelog
 
+## `1.3.0` - 2026-03-09
+
+Added:
+
+- page-quality scoring with per-page quality summaries and snapshot-level quality aggregates
+- low-signal page filtering during `docsync import`, with an override via `--include-low-signal`
+- `docsync dashboard` to generate a local HTML audit view for any snapshot
+- `docsync notify telegram` to send snapshot summaries to a Telegram bot
+- tests for dashboard generation, Telegram summary formatting, low-signal import filtering, and quality scoring
+
+Changed:
+
+- snapshot manifests and page sidecars now record page quality data alongside normalization metadata
+- operator workflows now have a browser-friendly local report instead of JSON-only inspection
+- headless fake-browser test is hardened to avoid flaky `Text file busy` failures
+
 ## `1.2.0` - 2026-03-09
 
 Added:

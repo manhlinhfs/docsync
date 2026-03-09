@@ -166,6 +166,7 @@ mod tests {
                 last_modified: None,
                 byte_size: 10,
                 normalization: None,
+                quality: None,
             }],
             notes: Vec::new(),
         };

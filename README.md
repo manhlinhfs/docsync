@@ -13,6 +13,8 @@ With one tool, you can:
 - **Normalize** noisy Markdown/MDX before hashing or import
 - **Track changes** across snapshots with incremental sync
 - **Import** only new or changed pages into OmniMem
+- **Review** collected pages in a local dashboard
+- **Notify** Telegram bots with snapshot summaries
 
 It works well for:
 
@@ -22,9 +24,9 @@ It works well for:
 - **JS-heavy docs** with optional headless fallback
 - **Git-native docs repos**
 
-Current stable version: **`1.2.0`**
+Current stable version: **`1.3.0`**
 
-Planned milestones after `v1.2.0`: see [ROADMAP.md](ROADMAP.md).
+Planned milestones after `v1.3.0`: see [ROADMAP.md](ROADMAP.md).
 
 ## **Quick Start**
 
@@ -162,6 +164,21 @@ Built-in cleanup profiles now cover common patterns from **Mintlify**, **Docusau
 That means the content under `pages/` is the **normalized** version.
 The content under `raw/` is the **original fetched body**.
 
+## **Quality And Review**
+
+Each stored page now gets a quality score based on:
+
+- title presence
+- text density
+- residual HTML or MDX noise
+- content length and structure
+
+Build a browser-friendly review page with:
+
+```bash
+docsync dashboard openclaw
+```
+
 ## **Incremental Sync**
 
 If a source already has an earlier snapshot, `docsync` will classify pages as:
@@ -182,6 +199,23 @@ Force a full re-import with:
 
 ```bash
 docsync import openclaw --all-pages
+```
+
+Include low-signal pages anyway:
+
+```bash
+docsync import openclaw --include-low-signal
+```
+
+## **Telegram Notifications**
+
+Send a snapshot summary to a Telegram bot:
+
+```bash
+export DOCSYNC_TELEGRAM_BOT_TOKEN=123456:ABCDEF
+export DOCSYNC_TELEGRAM_CHAT_ID=-1001234567890
+
+docsync notify telegram openclaw
 ```
 
 ## **Proxy And Headless**

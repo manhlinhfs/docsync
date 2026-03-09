@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::config::AppPaths;
 use crate::models::{PageChangeStatus, PageManifestEntry, SnapshotManifest};
+use crate::quality::is_low_signal;
 use crate::util::now_utc_rfc3339;
 
 const DEFAULT_OMNIMEM_PATH: &str = "/root/omnimem/omnimem";
@@ -22,6 +23,7 @@ pub struct ImportResult {
     pub failed_pages: usize,
     pub skipped_unchanged_pages: usize,
     pub skipped_duplicate_pages: usize,
+    pub skipped_low_signal_pages: usize,
     pub summary_path: PathBuf,
     pub omnimem_cmd: String,
     pub dry_run: bool,
@@ -51,6 +53,7 @@ struct OmniMemImportSummary {
     failed_pages: usize,
     skipped_unchanged_pages: usize,
     skipped_duplicate_pages: usize,
+    skipped_low_signal_pages: usize,
     items: Vec<OmniMemImportItem>,
 }
 
@@ -86,6 +89,7 @@ pub fn import_snapshot(
     direct: bool,
     dry_run: bool,
     all_pages: bool,
+    include_low_signal: bool,
 ) -> Result<ImportResult> {
     let snapshot_dir = resolve_snapshot_dir(paths, source_name, reference.as_deref())?;
     let snapshot_label = snapshot_dir
@@ -116,6 +120,7 @@ pub fn import_snapshot(
         .count();
     let mut selected_pages = 0usize;
     let mut skipped_duplicate_pages = 0usize;
+    let mut skipped_low_signal_pages = 0usize;
     let mut importable_pages = Vec::new();
     let mut items = Vec::new();
 
@@ -170,6 +175,17 @@ pub fn import_snapshot(
         let Some(page_path) = page.page_path.clone() else {
             continue;
         };
+        if !include_low_signal && page.quality.as_ref().is_some_and(is_low_signal) {
+            skipped_low_signal_pages += 1;
+            items.push(OmniMemImportItem {
+                page_path: page_path.display().to_string(),
+                status: "skipped_low_signal".to_string(),
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+            continue;
+        }
         selected_pages += 1;
         importable_pages.push(page_path);
     }
@@ -227,6 +243,7 @@ pub fn import_snapshot(
         failed_pages,
         skipped_unchanged_pages,
         skipped_duplicate_pages,
+        skipped_low_signal_pages,
         items,
     };
     write_json(&summary_path, &summary)?;
@@ -239,6 +256,7 @@ pub fn import_snapshot(
         failed_pages,
         skipped_unchanged_pages,
         skipped_duplicate_pages,
+        skipped_low_signal_pages,
         summary_path,
         omnimem_cmd,
         dry_run,
@@ -461,6 +479,7 @@ mod tests {
     use crate::config::AppPaths;
     use crate::models::{DiscoverySummary, SnapshotManifest, SourceKind, VersionStrategy};
     use crate::probe::{DetectedInputKind, SuggestedMode};
+    use crate::quality::{PageQualityRating, PageQualitySummary};
 
     #[test]
     fn imports_snapshot_with_fake_omnimem() -> Result<()> {
@@ -478,6 +497,7 @@ mod tests {
             "demo",
             Some("snap-1".to_string()),
             Some(fake.to_string_lossy().to_string()),
+            false,
             false,
             false,
             false,
@@ -548,6 +568,7 @@ mod tests {
             false,
             false,
             false,
+            false,
         )?;
 
         assert_eq!(result.selected_pages, 1);
@@ -614,6 +635,7 @@ mod tests {
             "demo",
             Some("snap-3".to_string()),
             Some(fake.to_string_lossy().to_string()),
+            false,
             false,
             false,
             false,
@@ -695,6 +717,7 @@ mod tests {
             false,
             false,
             false,
+            false,
         )?;
 
         assert_eq!(result.selected_pages, 1);
@@ -702,6 +725,85 @@ mod tests {
         let log = fs::read_to_string(root.join("omnimem-invocations.log"))?;
         assert!(log.contains("guide.md"));
         assert!(!log.contains("guide-index.md"));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn skips_low_signal_pages_by_default() -> Result<()> {
+        let root = make_temp_dir("omnimem-import-low-signal");
+        let paths = make_app_paths(&root);
+        let snapshot_dir = create_snapshot_fixture(&paths, "demo", "snap-5")?;
+        let page = snapshot_dir.join("pages/thin.md");
+        fs::create_dir_all(page.parent().expect("page parent"))?;
+        fs::write(&page, "thin\n")?;
+
+        let mut page_entry = page_entry(&page, crate::models::PageChangeStatus::New);
+        page_entry.quality = Some(PageQualitySummary {
+            score: 18,
+            rating: PageQualityRating::Low,
+            word_count: 4,
+            non_empty_lines: 1,
+            text_lines: 1,
+            heading_count: 0,
+            code_block_count: 0,
+            link_count: 0,
+            residual_html_tags: 0,
+            residual_mdx_components: 0,
+            title_present: false,
+            text_density: 1.0,
+            low_signal_reasons: vec!["very_short".to_string()],
+        });
+
+        let manifest = SnapshotManifest {
+            schema_version: 7,
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            source_name: "demo".to_string(),
+            entry_url: "https://example.com".to_string(),
+            source_kind: SourceKind::Website,
+            version_strategy: VersionStrategy::DateSnapshot,
+            source_ref: "snap-5".to_string(),
+            snapshot_label: "snap-5".to_string(),
+            snapshot_dir: snapshot_dir.clone(),
+            status: "fetched".to_string(),
+            previous_snapshot_label: None,
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            discovery: DiscoverySummary {
+                manifest_path: snapshot_dir.join("discovery.json"),
+                adapters: vec!["seed_page".to_string()],
+                frontier_count: 1,
+                llms_index_url: None,
+                llms_full_index_url: None,
+                sitemap_count: 0,
+            },
+            git: None,
+            fetch: None,
+            diff: None,
+            pages: vec![page_entry],
+            notes: Vec::new(),
+        };
+        fs::write(
+            snapshot_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)?,
+        )?;
+
+        let fake = fake_omnimem_script(&root, "import-ok")?;
+        let result = import_snapshot(
+            &paths,
+            "demo",
+            Some("snap-5".to_string()),
+            Some(fake.to_string_lossy().to_string()),
+            false,
+            false,
+            false,
+            false,
+        )?;
+
+        assert_eq!(result.selected_pages, 0);
+        assert_eq!(result.skipped_low_signal_pages, 1);
+        let summary = fs::read_to_string(result.summary_path)?;
+        assert!(summary.contains("skipped_low_signal"));
         fs::remove_dir_all(root)?;
         Ok(())
     }
@@ -788,6 +890,7 @@ mod tests {
                     last_modified: None,
                     byte_size: 8,
                     normalization: None,
+                    quality: None,
                 })
                 .collect(),
             notes: Vec::new(),
@@ -822,6 +925,7 @@ mod tests {
             last_modified: None,
             byte_size: 8,
             normalization: None,
+            quality: None,
         }
     }
 

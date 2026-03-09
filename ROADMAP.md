@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap is version-first, not date-first. `docsync` is currently stable at `v1.2.0`.
+This roadmap is version-first, not date-first. `docsync` is currently stable at `v1.3.0`.
 
 ## Release themes
 
@@ -173,9 +173,9 @@ Exit criteria:
 - manifests are backward-compatible or migratable
 - release notes communicate upgrade guarantees
 
-## Milestones after `v1.2.0`
+## Milestones after `v1.3.0`
 
-Development after `v1.2.0` should move in milestone order unless a regression, release blocker, or security issue needs to interrupt the sequence.
+Development after `v1.3.0` should move in milestone order unless a regression, release blocker, or security issue needs to interrupt the sequence.
 
 ### `v1.2.0` Multi-Engine Normalization
 
@@ -195,9 +195,9 @@ Exit criteria:
 - canonical page selection is stable across repeated syncs
 - representative normalization regressions pass in automated tests
 
-### `v1.3.0` Quality Scoring and Import Policy
+### `v1.3.0` Quality Scoring, Dashboard, and Notifications
 
-Status: planned
+Status: implemented
 
 Scope:
 
@@ -206,12 +206,16 @@ Scope:
 - add import policy rules for low-signal pages, empty pages, and duplicate groups
 - keep the best canonical page when duplicate content appears at multiple URLs
 - expose quality summary counters in `manifest.json`
+- generate a local HTML dashboard so users can inspect snapshot quality and page status in a browser
+- send snapshot summaries to Telegram bots with a dedicated CLI command
 
 Exit criteria:
 
 - each snapshot reports page-quality metrics in a way that is easy to audit
 - low-signal pages can be filtered before OmniMem import
 - duplicate groups keep the best canonical page consistently
+- users can open a browser report for any snapshot without external services
+- Telegram summary delivery works with bot token and chat ID configuration
 
 ### `v1.4.0` Section-Aware Chunking
 
