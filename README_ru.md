@@ -2,247 +2,274 @@
 
 [Tiếng Việt](README_vi.md) | [Русский](README_ru.md) | [English](README.md)
 
-`docsync` - eto CLI na Rust dlya sborki lokalnykh versioned-snapshotov tekhnicheskoi dokumentatsii, kotorye potom mozhno importirovat v OmniMem ili lyubuyu druguyu retrieval-sistemu.
+> **docsync** — это *binary-first CLI*, который превращает сайты с документацией и docs-репозитории в чистые локальные Markdown snapshot'ы, готовые для **OmniMem** или любого другого RAG-контура.
 
-Proekt stroitsya vokrug **universal intake**, a ne vokrug neskolkikh zhestko zadannykh docs homepage. Entry URL istochnika mozhet byt:
+## **Что Делает `docsync`**
 
-- docs homepage
-- odna stranitsa dokumentatsii
-- `llms.txt`
-- `llms-full.txt`
-- `sitemap.xml`
-- `robots.txt`
-- syroi markdown ili MDX fail
-- dokument OpenAPI ili JSON schema
-- URL PDF ili office dokumenta
-- docs site, gde istochnik pravdy zhivet v Git repo
+С помощью одного инструмента можно:
 
-Proekt namerenno sdelan v modele **binary-first**:
+- **Проверить** docs URL перед синком
+- **Скачать** сайт документации или docs-репозиторий в локальный snapshot
+- **Нормализовать** Markdown/MDX перед hash и import
+- **Отслеживать изменения** между snapshot'ами
+- **Импортировать** в OmniMem только новые или изменённые страницы
 
-- polzovatel dolzhen mozhno skachat odin release artifact i srazu zapustit ego
-- lokalnoe sostoyanie dolzhno zhit v predskazuemom kataloge
-- sync workflow dolzhen skriptovatsya v CI, cron ili terminal sessions
-- docs, dostupnye tolko cherez website, vse ravno dolzhny byt ingestible bez ruchek per-project scraper script
+Лучше всего подходит для:
 
-Proxy podderzhivaetsya i dlya HTTP sync, i dlya `git-docs` sync:
+- **docs-сайтов** с `llms.txt`, `llms-full.txt`, `sitemap.xml`
+- **Markdown-first документации**
+- **HTML-документации** с fallback в Markdown
+- **JS-heavy docs** с headless fallback
+- **Git-native docs-репозиториев**
 
-- global CLI override: `--proxy http://127.0.0.1:7890`
-- per-source setting: `docsync source add ... --proxy ...`
-- runtime config: `default_proxy_url` v `config.json`
-- fallback iz environment: `DOCSYNC_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`
+Текущая stable-версия: **`1.1.0`**
 
-Podderzhivaemye formy proxy URL:
+## **Быстрый Старт**
 
-- `http://user:pass@host:port`
-- `socks5://host:port`
-- `socks5h://user:pass@host:port`
-
-Headless browser fallback mozhno nastroitsya cherez:
-
-- global CLI override: `--browser-cmd /usr/bin/chromium`
-- per-source setting: `docsync source add ... --browser-cmd ...`
-- runtime config: `default_browser_cmd` v `config.json`
-- avtomaticheskoe opredelenie rasprostranennykh Chromium-based browser v `PATH`
-
-## Status
-
-Tekushchaya versiya: `1.1.0`
-
-Etot release fokusiruetsya na:
-
-- lokalnom config i source registry
-- probe proizvolnykh importable links dlya agent-friendly capability detection
-- snapshot generation na osnove discovery iz `llms.txt`, `llms-full.txt`, sitemap indexes i seed pages
-- markdown-first fetch stranits s arkhirovaniem raw response i sidecar metadata dlya kazhdoi stranitsy
-- git-native docs sync iz repository refs s docs root detection i nav manifest discovery
-- HTML fallback conversion dlya saitov, kotorye ne otdayut markdown napryamuyu
-- incremental sync s snapshot lineage, diff summary, reused pages i removed page tracking
-- headless browser fallback dlya dynamic docs pages, kogda static HTML extraction slishkom tonkaya
-- markdown/MDX normalization, kotoryi ubiraet tipichnyi docs boilerplate i flattenit UI-heavy components do hash ili import
-- komandy OmniMem import i verify s changed-only incremental import po umolchaniyu i propuskom duplicate-content vnutri odnogo snapshot
-- migrate command dlya runtime schema i guarantee sovmestimosti config/manifest
-- shell completions, GitHub Actions CI/release automation i install scripts
-
-## Pochemu Rust
-
-Rust podkhodit dlya `docsync`, potomu chto proektu nuzhny:
-
-- odin otdelnyi binary s nizkim runtime friction
-- zhestkaya tipizatsiya dlya manifests, config i release compatibility
-- khoroshaya osnova dlya budushchikh concurrent crawling i fetch pipelines
-- prostoe rasprostranenie na Linux, macOS i Windows
-
-## Predpolagaemyi workflow
+### **1. Инициализация**
 
 ```bash
 docsync init
-docsync source add postiz --url https://docs.postiz.com --kind website --tag docs --tag mintlify
-docsync probe https://docs.postiz.com/introduction
-docsync sync postiz --ref snapshot-20260307
-docsync import postiz --ref snapshot-20260307
 ```
 
-## Tekushchie komandy
-
-### `docsync init`
-
-Sozdaet lokalnyi runtime layout:
-
-- config file
-- sources directory
-- snapshots directory
-
-Dom po umolchaniyu:
+Каталог по умолчанию:
 
 ```text
 ~/.docsync
 ```
 
-Mozhno pereopredelit tak:
+### **2. Probe URL**
 
 ```bash
-docsync --home /path/to/runtime init
-DOCSYNC_HOME=/path/to/runtime docsync init
+docsync probe https://docs.openclaw.ai/ --json
 ```
 
-### `docsync paths`
+Команда показывает:
 
-Pechataet resolve-runtime paths.
+- поддерживает ли сайт `text/markdown`
+- есть ли `llms.txt`
+- есть ли sitemap
+- является ли URL **корнем сайта**, **одной страницей** или **отдельным asset**
 
-### `docsync source add`
+### **3. Добавить source**
 
-Registriruet source definition po entry URL:
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot
+```
+
+### **4. Выполнить sync**
+
+```bash
+docsync sync openclaw --json
+```
+
+### **5. Импортировать в OmniMem**
+
+```bash
+docsync import openclaw
+```
+
+## **Практические Примеры**
+
+### **OpenClaw: полный sync docs-сайта**
+
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot
+
+docsync sync openclaw
+docsync import openclaw --dry-run --json
+```
+
+Это хороший кейс, когда сайт имеет:
+
+- `llms.txt`
+- sitemap
+- выдачу Markdown по HTTP
+
+### **shadcn/ui: sync из Git-репозитория**
 
 ```bash
 docsync source add shadcn-ui \
   --url https://ui.shadcn.com \
-  --proxy http://127.0.0.1:7890 \
-  --browser-cmd /usr/bin/chromium \
   --kind git-docs \
   --repo https://github.com/shadcn-ui/ui \
   --docs-path apps/v4/content/docs \
   --default-ref main \
-  --version-strategy git-ref \
-  --tag components \
-  --tag docs
+  --version-strategy git-ref
+
+docsync sync shadcn-ui --ref main
 ```
 
-### `docsync source list`
+Используйте `git-docs`, когда source of truth находится в репозитории.
 
-Pokazyvaet vse nastroennye sources.
+### **Supabase: sync docs-сайта**
 
-### `docsync source show <name>`
+```bash
+docsync source add supabase \
+  --url https://supabase.com/docs \
+  --kind website \
+  --version-strategy date-snapshot
 
-Pokazyvaet odin source.
+docsync sync supabase
+```
 
-### `docsync probe <url>`
+### **Только одна страница**
 
-Probe dokumentatsionnogo URL dlya capability, vazhnykh dlya AI-oriented sync:
+```bash
+docsync source add openclaw-getting-started \
+  --url https://docs.openclaw.ai/start/getting-started \
+  --kind website \
+  --version-strategy date-snapshot
 
-- podderzhka `Accept: text/markdown`
-- `x-markdown-tokens`
-- `x-original-tokens`
-- `content-signal`
-- `llms.txt`
-- `robots.txt`
-- nalichie sitemap
+docsync sync openclaw-getting-started
+```
 
-Seichas eto samaya poleznaya komanda, potomu chto ona pokazyvaet, kakaya adapter strategy nuzhna saitu do napisaniya crawler.
-Komanda takzhe uvazhaet `--proxy` ili configured default proxy, kogda sait blokiruet datacenter IP.
+Полезно, когда нужно импортировать только один page seed без полного обхода сайта.
 
-Takzhe ona classify URL v obshchie intake modes:
+## **Простая Модель Работы**
 
-- discovery root
-- page seed
-- single file asset
-- markdown endpoint
-- `llms` index
-- sitemap ili robots discovery seed
+`docsync` работает так:
 
-### `docsync import <source>`
+1. **Probe** URL
+2. **Discover** frontier из `llms.txt`, `llms-full.txt`, sitemap или page seed
+3. **Fetch** лучший доступный формат
+4. **Normalize** контент в более чистый Markdown
+5. **Write** локальный snapshot
+6. **Import** только нужные страницы
 
-Importiruet sokhranennyi snapshot v OmniMem i zapisivaet `omnimem-import.json` v etot snapshot.
+## **Нормализация Контента**
 
-Dlya incremental snapshot po umolchaniyu importiruyutsya tolko stranitsy `new` i `changed`.
-Ispolzuyte `--all-pages`, esli nuzhen polnyi re-import.
-Esli neskolko stranits posle normalization dayut odin i tot zhe content hash, `docsync import` po umolchaniyu importiruet tolko odnu kopiyu.
+`docsync` не импортирует сырой MDX как есть.
 
-### `docsync verify <source> <query>`
+Перед hash или import он очищает типичный docs-шум:
 
-Zapuskayet OmniMem search helper protiv sokhranennogo snapshot i zapisivaet `omnimem-verify.json`.
+- дублирующиеся H1
+- boilerplate в начале страницы
+- UI-компоненты вроде callout, tabs, steps, cards, tooltip
+- лишние Markdown/MDX wrapper'ы
+- duplicate-content страницы при import в OmniMem
 
-### `docsync completions <shell>`
+Итог:
 
-Generiruet shell completion dlya `bash`, `zsh`, `fish`, `elvish` ili `powershell`.
+- **`pages/`** содержит **нормализованный Markdown**
+- **`raw/`** содержит **исходный body ответа**
 
-### `docsync migrate`
+## **Incremental Sync**
 
-Perepisyvaet staryi runtime config i snapshot manifests v tekushchuyu stable schema.
+Если у source уже есть прошлый snapshot, `docsync` классифицирует страницы как:
 
-### `docsync sync <source>`
+- **new**
+- **changed**
+- **unchanged**
+- **removed**
 
-V `v1.1.0` komanda vypolnyaet discovery, a zatem incremental markdown-first HTTP fetch, HTML fallback, headless fallback ili git-native repo sync:
+По умолчанию `docsync import` импортирует только:
 
-- snapshot directory
-- `discovery.json`
-- discovered URL frontier iz `llms.txt`, `llms-full.txt`, sitemap indexes, direct seed pages ili repo-native docs trees
-- normalized markdown pages v `pages/`
-- sidecar metadata dlya kazhdoi stranitsy v `pages/`
-- raw response bodies v `raw/`
-- `manifest.json`
-- optional `omnimem-import.json`
-- optional `omnimem-verify.json`
+- **новые страницы**
+- **изменённые страницы**
 
-Dlya `git-docs` `docsync` kloniruet repo, resolveit zaproshennyi ref, detectit ili ispolzuet `docs_path`, snapshotit markdown files napryamuyu i zapisivaet nav manifests, takie kak `meta.json`, `docs.json` ili `mint.json`.
-Dlya HTML-only page seed `docsync` konvertiruet poluchennyi HTML v Markdown i sokhranyaet raw HTML body vmeste s normalized page.
-Dlya Markdown i MDX istochnikov `docsync` normalizuet tipichnye komponenty, takie kak callouts, tabs, steps, cards, duplicate headings i boilerplate v nachale stranitsy do hash, diff ili import.
-Esli sushchestvuet predydushchii snapshot, `docsync` takzhe zapisivaet `new`, `changed`, `unchanged` i `removed` v `manifest.json`, reuseit validator-backed pages i pokazyvaet diff counts v CLI output.
+Если несколько страниц после normalization дают одинаковый content hash, импортируется только одна копия.
 
-## Runtime layout
+Для полного re-import:
+
+```bash
+docsync import openclaw --all-pages
+```
+
+## **Proxy И Headless**
+
+### **Proxy**
+
+Поддерживаются:
+
+- **HTTP**
+- **HTTPS**
+- **SOCKS5**
+- **SOCKS5h**
+
+Пример:
+
+```bash
+docsync --proxy socks5h://user:pass@127.0.0.1:1080 probe https://docs.example.com
+```
+
+Или сохранить proxy на уровне source:
+
+```bash
+docsync source add blocked-site \
+  --url https://docs.example.com \
+  --kind website \
+  --version-strategy date-snapshot \
+  --proxy http://user:pass@host:port
+```
+
+### **Headless browser fallback**
+
+```bash
+docsync --browser-cmd /usr/bin/chromium sync some-dynamic-site
+```
+
+Это полезно для docs-сайтов, где основной контент появляется только после JS-render.
+
+## **Структура Runtime**
 
 ```text
 ~/.docsync/
   config.json
   sources/
   snapshots/
-    postiz/
-      snapshot-20260307/
+    openclaw/
+      snapshot-20260309/
         discovery.json
         manifest.json
         pages/
-          docs.postiz.com/introduction.md
-          docs.postiz.com/introduction.md.json
         raw/
-          docs.postiz.com/introduction.body
+        omnimem-import.json
+        omnimem-verify.json
 ```
 
-## Razrabotka
+Ключевые файлы:
 
-Build:
+- **`discovery.json`**: как был собран frontier
+- **`manifest.json`**: summary snapshot'а, fetch, diff и page metadata
+- **`pages/`**: нормализованный Markdown
+- **`raw/`**: исходный response body
+
+## **Самые Полезные Команды**
 
 ```bash
-cargo build
+docsync init
+docsync paths
+docsync probe <url>
+docsync source add <name> --url <url> ...
+docsync source list
+docsync source show <name>
+docsync sync <name>
+docsync import <name>
+docsync verify <name> "<query>"
+docsync migrate
+docsync completions bash
 ```
 
-Testy:
+## **Разработка**
 
 ```bash
+cargo fmt --check
 cargo test
+cargo build --release
 ```
 
-Format:
+## **Дополнительная Документация**
 
-```bash
-cargo fmt
-```
-
-## Dokumentatsiya
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [INTAKE_MODEL.md](docs/INTAKE_MODEL.md)
-- [LANGUAGE_POLICY.md](docs/LANGUAGE_POLICY.md)
-- [MIGRATION.md](docs/MIGRATION.md)
-- [RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
-- [USAGE.md](docs/USAGE.md)
-- [RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
-- [ROADMAP.md](ROADMAP.md)
+- [Usage](docs/USAGE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Migration](docs/MIGRATION.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)

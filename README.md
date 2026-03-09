@@ -2,95 +2,35 @@
 
 [Tiếng Việt](README_vi.md) | [Русский](README_ru.md) | [English](README.md)
 
-`docsync` is a Rust CLI for building local, versioned snapshots of technical documentation that can later be imported into OmniMem or any other retrieval system.
+> **docsync** is a *binary-first CLI* that turns documentation sites and docs repos into clean, local Markdown snapshots ready for **OmniMem** or any other RAG pipeline.
 
-It is designed around **universal intake**, not just a few handpicked docs homepages. The entry URL for a source may be:
+## **What It Does**
 
-- a docs homepage
-- a single docs page
-- `llms.txt`
-- `llms-full.txt`
-- `sitemap.xml`
-- `robots.txt`
-- a raw markdown or MDX file
-- an OpenAPI or JSON schema document
-- a PDF or office document URL
-- a repo-backed docs site with a separate Git source of truth
+With one tool, you can:
 
-The project is intentionally **binary-first**:
+- **Probe** a docs URL to see what kind of source it is
+- **Sync** a website or docs repo into a local snapshot
+- **Normalize** noisy Markdown/MDX before hashing or import
+- **Track changes** across snapshots with incremental sync
+- **Import** only new or changed pages into OmniMem
 
-- users should be able to download one release artifact and run it
-- local state should live in a predictable directory
-- sync workflows should be scriptable in CI, cron, or terminal sessions
-- website-only docs should still be ingestible without maintaining ad hoc scrape scripts per project
+It works well for:
 
-Proxy support is available for both HTTP sync and `git-docs` sync through:
+- **Docs websites** with `llms.txt`, `llms-full.txt`, or `sitemap.xml`
+- **Markdown-first docs**
+- **HTML docs** with Markdown fallback
+- **JS-heavy docs** with optional headless fallback
+- **Git-native docs repos**
 
-- global CLI override: `--proxy http://127.0.0.1:7890`
-- per-source setting: `docsync source add ... --proxy ...`
-- runtime config: `default_proxy_url` in `config.json`
-- environment fallback: `DOCSYNC_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`
+Current stable version: **`1.1.0`**
 
-Supported proxy URL forms include:
+## **Quick Start**
 
-- `http://user:pass@host:port`
-- `socks5://host:port`
-- `socks5h://user:pass@host:port`
-
-Headless browser fallback can be configured through:
-
-- global CLI override: `--browser-cmd /usr/bin/chromium`
-- per-source setting: `docsync source add ... --browser-cmd ...`
-- runtime config: `default_browser_cmd` in `config.json`
-- automatic detection of common Chromium-based browsers on `PATH`
-
-## Status
-
-Current version: `1.1.0`
-
-This release focuses on:
-
-- local config and source registry
-- probing arbitrary importable links for agent-friendly capabilities
-- discovery-backed snapshot generation from `llms.txt`, `llms-full.txt`, sitemap indexes, and seed pages
-- markdown-first page fetch with raw response archival and per-page metadata sidecars
-- git-native docs sync from repository refs with docs root detection and nav manifest discovery
-- HTML fallback conversion for website pages that do not expose markdown directly
-- incremental sync with snapshot lineage, diff summaries, reused pages, and removed page tracking
-- headless browser fallback for dynamic docs pages when static HTML extraction is too thin
-- markdown/MDX normalization that strips common docs boilerplate and flattens UI-heavy components before hashing or import
-- OmniMem import and verification commands with per-snapshot logs, changed-only incremental import by default, and duplicate-content skipping inside a snapshot
-- runtime migration command and stable schema compatibility guarantees
-- shell completion generation, GitHub Actions CI/release automation, and install scripts
-
-## Why Rust
-
-Rust is a good fit for `docsync` because the project needs:
-
-- a single static-ish binary with low runtime friction
-- strong typing for manifests, config, and release compatibility
-- good concurrency later for crawling and fetch pipelines
-- easy distribution on Linux, macOS, and Windows
-
-## Intended workflow
+### **1. Initialize local state**
 
 ```bash
 docsync init
-docsync source add postiz --url https://docs.postiz.com --kind website --tag docs --tag mintlify
-docsync probe https://docs.postiz.com/introduction
-docsync sync postiz --ref snapshot-20260307
-docsync import postiz --ref snapshot-20260307
 ```
-
-## Current commands
-
-### `docsync init`
-
-Create the local runtime layout:
-
-- config file
-- sources directory
-- snapshots directory
 
 Default home:
 
@@ -98,162 +38,229 @@ Default home:
 ~/.docsync
 ```
 
-Override it with:
+### **2. Probe a docs URL**
 
 ```bash
-docsync --home /path/to/runtime init
-DOCSYNC_HOME=/path/to/runtime docsync init
+docsync probe https://docs.openclaw.ai/ --json
 ```
 
-### `docsync paths`
+This tells you:
 
-Print resolved runtime paths.
+- whether the site supports `text/markdown`
+- whether `llms.txt` exists
+- whether sitemap discovery is available
+- whether the URL looks like a **site root**, **single page**, or **asset**
 
-### `docsync source add`
+### **3. Add a source**
 
-Register a source definition from an entry URL:
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot
+```
+
+### **4. Sync**
+
+```bash
+docsync sync openclaw --json
+```
+
+### **5. Import into OmniMem**
+
+```bash
+docsync import openclaw
+```
+
+## **Real Examples**
+
+### **OpenClaw: sync a full docs website**
+
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot
+
+docsync sync openclaw
+docsync import openclaw --dry-run --json
+```
+
+Good fit when the docs site has:
+
+- `llms.txt`
+- sitemap discovery
+- Markdown negotiation
+
+### **shadcn/ui: sync from the Git repo**
 
 ```bash
 docsync source add shadcn-ui \
   --url https://ui.shadcn.com \
-  --proxy http://127.0.0.1:7890 \
-  --browser-cmd /usr/bin/chromium \
   --kind git-docs \
   --repo https://github.com/shadcn-ui/ui \
   --docs-path apps/v4/content/docs \
   --default-ref main \
-  --version-strategy git-ref \
-  --tag components \
-  --tag docs
+  --version-strategy git-ref
+
+docsync sync shadcn-ui --ref main
 ```
 
-### `docsync source list`
+Use `git-docs` when the docs source of truth is the repository itself.
 
-List configured sources.
+### **Supabase: sync a docs website**
 
-### `docsync source show <name>`
+```bash
+docsync source add supabase \
+  --url https://supabase.com/docs \
+  --kind website \
+  --version-strategy date-snapshot
 
-Display one configured source.
+docsync sync supabase
+```
 
-### `docsync probe <url>`
+### **Single page only**
 
-Probe a docs URL for capabilities that matter to AI-oriented sync:
+```bash
+docsync source add openclaw-getting-started \
+  --url https://docs.openclaw.ai/start/getting-started \
+  --kind website \
+  --version-strategy date-snapshot
 
-- `Accept: text/markdown` support
-- `x-markdown-tokens`
-- `x-original-tokens`
-- `content-signal`
-- `llms.txt`
-- `robots.txt`
-- sitemap presence
+docsync sync openclaw-getting-started
+```
 
-This is the current most useful command because it tells you which adapter strategy a site needs before implementing a crawler.
-It also respects `--proxy` or the configured default proxy when a site blocks direct datacenter IPs.
+This is useful when you want to import one page without expanding the whole site.
 
-It also classifies the URL into a generic intake mode such as:
+## **How `docsync` Thinks**
 
-- discovery root
-- page seed
-- single file asset
-- markdown endpoint
-- `llms` index
-- sitemap or robots discovery seed
+Keep the model simple:
 
-### `docsync import <source>`
+1. **Probe** the URL
+2. **Discover** pages from `llms.txt`, `llms-full.txt`, sitemap, or a direct seed
+3. **Fetch** the best available representation
+4. **Normalize** the content into cleaner Markdown
+5. **Write** a local snapshot
+6. **Import** only what changed
 
-Import a stored snapshot into OmniMem and write `omnimem-import.json` under that snapshot.
+## **Normalization**
 
-For incremental snapshots, `docsync import` imports only `new` and `changed` pages by default.
-Use `--all-pages` when you explicitly want a full re-import.
-When multiple pages normalize to the same content hash, `docsync import` imports only one copy by default.
+`docsync` does not blindly import raw MDX.
 
-### `docsync verify <source> <query>`
+Before hashing or import, it cleans common docs noise such as:
 
-Run an OmniMem search helper against a stored snapshot and write `omnimem-verify.json`.
+- duplicated top headings
+- top-of-page docs index boilerplate
+- UI components like callouts, tabs, steps, cards, and tooltips
+- noisy Markdown/MDX wrappers
+- duplicate-content pages during OmniMem import
 
-### `docsync completions <shell>`
+That means the content under `pages/` is the **normalized** version.
+The content under `raw/` is the **original fetched body**.
 
-Generate shell completion scripts for `bash`, `zsh`, `fish`, `elvish`, or `powershell`.
+## **Incremental Sync**
 
-### `docsync migrate`
+If a source already has an earlier snapshot, `docsync` will classify pages as:
 
-Rewrite old runtime config and snapshot manifests into the current stable schema.
+- **new**
+- **changed**
+- **unchanged**
+- **removed**
 
-### `docsync sync <source>`
+By default, `docsync import` only imports:
 
-`v1.1.0` performs discovery plus incremental markdown-first HTTP fetch, HTML fallback, headless fallback, or git-native repo sync:
+- **new pages**
+- **changed pages**
 
-- snapshot directory
-- `discovery.json`
-- discovered URL frontier from `llms.txt`, `llms-full.txt`, sitemap indexes, direct seed pages, or repo-native docs trees
-- normalized markdown pages under `pages/`
-- per-page metadata sidecars under `pages/`
-- raw response bodies under `raw/`
-- `pages/`
-- `raw/`
-- `manifest.json`
-- optional `omnimem-import.json`
-- optional `omnimem-verify.json`
+If multiple pages normalize to the same content hash, only one copy is imported by default.
 
-For `git-docs` sources, `docsync` clones the repo, resolves the requested ref, detects or uses `docs_path`, snapshots markdown files directly, and records nav manifests such as `meta.json`, `docs.json`, or `mint.json`.
-For HTML-only page seeds, `docsync` converts the fetched HTML into Markdown and stores the raw HTML body alongside the normalized page.
-For Markdown and MDX sources, `docsync` normalizes common docs components like callouts, tabs, steps, cards, duplicate headings, and top-of-page boilerplate before hashing, diffing, or import.
-When a previous snapshot exists, `docsync` also records `new`, `changed`, `unchanged`, and `removed` page state in `manifest.json`, reuses validator-backed pages, and reports diff counts in CLI output.
+Force a full re-import with:
 
-## Runtime layout
+```bash
+docsync import openclaw --all-pages
+```
+
+## **Proxy And Headless**
+
+### **Use a proxy**
+
+HTTP, HTTPS, SOCKS5, and SOCKS5h are supported:
+
+```bash
+docsync --proxy socks5h://user:pass@127.0.0.1:1080 probe https://docs.example.com
+```
+
+You can also store the proxy per source:
+
+```bash
+docsync source add blocked-site \
+  --url https://docs.example.com \
+  --kind website \
+  --version-strategy date-snapshot \
+  --proxy http://user:pass@host:port
+```
+
+### **Use a browser fallback**
+
+```bash
+docsync --browser-cmd /usr/bin/chromium sync some-dynamic-site
+```
+
+This is useful for docs sites that render most content in the browser.
+
+## **Runtime Layout**
 
 ```text
 ~/.docsync/
   config.json
   sources/
   snapshots/
-    postiz/
-      snapshot-20260307/
+    openclaw/
+      snapshot-20260309/
         discovery.json
         manifest.json
         pages/
-          docs.postiz.com/introduction.md
-          docs.postiz.com/introduction.md.json
         raw/
-          docs.postiz.com/introduction.body
+        omnimem-import.json
+        omnimem-verify.json
 ```
 
-## Development
+Important files:
 
-Build:
+- **`discovery.json`**: how the page frontier was discovered
+- **`manifest.json`**: snapshot summary, fetch summary, diff summary, page metadata
+- **`pages/`**: normalized Markdown
+- **`raw/`**: original fetched body
+
+## **Most Useful Commands**
 
 ```bash
-cargo build
+docsync init
+docsync paths
+docsync probe <url>
+docsync source add <name> --url <url> ...
+docsync source list
+docsync source show <name>
+docsync sync <name>
+docsync import <name>
+docsync verify <name> "<query>"
+docsync migrate
+docsync completions bash
 ```
 
-Run tests:
+## **Development**
 
 ```bash
+cargo fmt --check
 cargo test
+cargo build --release
 ```
 
-Format:
+## **More Docs**
 
-```bash
-cargo fmt
-```
-
-## Documentation
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [INTAKE_MODEL.md](docs/INTAKE_MODEL.md)
-- [LANGUAGE_POLICY.md](docs/LANGUAGE_POLICY.md)
-- [MIGRATION.md](docs/MIGRATION.md)
-- [RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
-- [USAGE.md](docs/USAGE.md)
-- [RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
-- [ROADMAP.md](ROADMAP.md)
-- [CHANGELOG.md](CHANGELOG.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## Project principles
-
-1. Prefer source-of-truth docs artifacts over brittle scraping.
-2. Probe for agent-friendly endpoints before converting HTML yourself.
-3. Keep every snapshot versioned, attributable, and reproducible.
-4. Design around stable local files that can be imported into OmniMem page-by-page.
+- [Usage](docs/USAGE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Migration](docs/MIGRATION.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)

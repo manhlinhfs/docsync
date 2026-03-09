@@ -2,247 +2,274 @@
 
 [Tiếng Việt](README_vi.md) | [Русский](README_ru.md) | [English](README.md)
 
-`docsync` la CLI viet bang Rust de tao cac snapshot tai lieu ky thuat co version tren may local, sau do co the import vao OmniMem hoac bat ky he thong retrieval nao khac.
+> **docsync** là một *CLI binary-first* giúp bạn biến website tài liệu hoặc repo docs thành các snapshot Markdown sạch trên máy local, sẵn sàng để đưa vào **OmniMem** hoặc bất kỳ hệ thống RAG nào khác.
 
-Du an duoc thiet ke theo huong **universal intake**, khong chi gom mot vai docs homepage co dinh. Entry URL cua mot source co the la:
+## **docsync Dùng Để Làm Gì?**
 
-- docs homepage
-- mot trang docs don
-- `llms.txt`
-- `llms-full.txt`
-- `sitemap.xml`
-- `robots.txt`
-- mot file markdown hoac MDX raw
-- tai lieu OpenAPI hoac JSON schema
-- URL PDF hoac office document
-- mot docs site lay noi dung tu repo Git rieng
+Với một công cụ duy nhất, bạn có thể:
 
-Du an co dinh huong **binary-first**:
+- **Probe** một URL tài liệu để biết nên xử lý theo kiểu nào
+- **Sync** website docs hoặc repo docs về máy
+- **Làm sạch** Markdown/MDX trước khi hash hoặc import
+- **Theo dõi thay đổi** giữa các snapshot
+- **Import** chỉ những trang mới hoặc đã thay đổi vào OmniMem
 
-- nguoi dung co the tai mot binary release va chay ngay
-- trang thai local nam trong cau truc thu muc on dinh, de doan
-- luong sync co the script hoa trong CI, cron, hoac terminal
-- docs chi co website van phai ingest duoc ma khong can viet scraper rieng cho tung du an
+Phù hợp nhất với:
 
-Ho tro proxy cho ca HTTP sync va `git-docs` sync:
+- **Website docs** có `llms.txt`, `llms-full.txt`, `sitemap.xml`
+- **Docs dạng Markdown**
+- **Docs HTML** có thể chuyển sang Markdown
+- **Docs render bằng JS** với headless fallback
+- **Docs lấy từ repo Git**
 
-- global CLI override: `--proxy http://127.0.0.1:7890`
-- per-source setting: `docsync source add ... --proxy ...`
-- runtime config: `default_proxy_url` trong `config.json`
-- environment fallback: `DOCSYNC_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`
+Phiên bản stable hiện tại: **`1.1.0`**
 
-Dang proxy URL duoc ho tro:
+## **Bắt Đầu Nhanh**
 
-- `http://user:pass@host:port`
-- `socks5://host:port`
-- `socks5h://user:pass@host:port`
-
-Headless browser fallback co the cau hinh qua:
-
-- global CLI override: `--browser-cmd /usr/bin/chromium`
-- per-source setting: `docsync source add ... --browser-cmd ...`
-- runtime config: `default_browser_cmd` trong `config.json`
-- tu dong detect cac Chromium-based browser pho bien tren `PATH`
-
-## Trang thai
-
-Version hien tai: `1.1.0`
-
-Ban phat hanh nay tap trung vao:
-
-- config local va source registry
-- probe cac link co the import de xac dinh capability phu hop cho tac vu AI
-- tao snapshot dua tren discovery tu `llms.txt`, `llms-full.txt`, sitemap index, va seed page
-- fetch trang theo uu tien markdown, luu raw response va sidecar metadata tung page
-- git-native docs sync tu ref cua repo, co docs root detection va nav manifest discovery
-- HTML fallback conversion cho cac website page khong expose markdown truc tiep
-- incremental sync voi snapshot lineage, diff summary, reused pages, va removed page tracking
-- headless browser fallback cho dynamic docs page khi static HTML extraction qua mong
-- markdown/MDX normalization de loai bo boilerplate pho bien cua docs va flatten cac UI component truoc khi hash hoac import
-- lenh import va verify voi OmniMem, kem changed-only incremental import mac dinh va bo qua duplicate content trong cung snapshot
-- migrate command cho runtime schema va compatibility guarantee cho manifest/config
-- shell completions, GitHub Actions CI/release automation, va install scripts
-
-## Tai sao dung Rust
-
-Rust phu hop voi `docsync` vi du an can:
-
-- mot binary don le, it friction khi chay
-- typing ro rang cho manifest, config, va release compatibility
-- kha nang concurrency tot hon o cac giai doan crawl/fetch sau nay
-- de phan phoi tren Linux, macOS, va Windows
-
-## Workflow du kien
+### **1. Khởi tạo thư mục runtime**
 
 ```bash
 docsync init
-docsync source add postiz --url https://docs.postiz.com --kind website --tag docs --tag mintlify
-docsync probe https://docs.postiz.com/introduction
-docsync sync postiz --ref snapshot-20260307
-docsync import postiz --ref snapshot-20260307
 ```
 
-## Cac lenh hien co
-
-### `docsync init`
-
-Tao runtime layout local:
-
-- config file
-- sources directory
-- snapshots directory
-
-Home mac dinh:
+Thư mục mặc định:
 
 ```text
 ~/.docsync
 ```
 
-Co the override bang:
+### **2. Kiểm tra nhanh một URL docs**
 
 ```bash
-docsync --home /path/to/runtime init
-DOCSYNC_HOME=/path/to/runtime docsync init
+docsync probe https://docs.openclaw.ai/ --json
 ```
 
-### `docsync paths`
+Lệnh này cho bạn biết:
 
-In ra cac runtime path da duoc resolve.
+- site có hỗ trợ `text/markdown` hay không
+- có `llms.txt` hay không
+- có sitemap hay không
+- URL đó là **trang gốc**, **một page đơn**, hay **một file docs**
 
-### `docsync source add`
+### **3. Thêm source**
 
-Dang ky source definition tu mot entry URL:
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot
+```
+
+### **4. Sync**
+
+```bash
+docsync sync openclaw --json
+```
+
+### **5. Import vào OmniMem**
+
+```bash
+docsync import openclaw
+```
+
+## **Ví Dụ Thực Tế**
+
+### **OpenClaw: sync toàn bộ docs website**
+
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot
+
+docsync sync openclaw
+docsync import openclaw --dry-run --json
+```
+
+Rất phù hợp khi site có:
+
+- `llms.txt`
+- sitemap
+- hỗ trợ trả Markdown trực tiếp
+
+### **shadcn/ui: sync từ repo Git**
 
 ```bash
 docsync source add shadcn-ui \
   --url https://ui.shadcn.com \
-  --proxy http://127.0.0.1:7890 \
-  --browser-cmd /usr/bin/chromium \
   --kind git-docs \
   --repo https://github.com/shadcn-ui/ui \
   --docs-path apps/v4/content/docs \
   --default-ref main \
-  --version-strategy git-ref \
-  --tag components \
-  --tag docs
+  --version-strategy git-ref
+
+docsync sync shadcn-ui --ref main
 ```
 
-### `docsync source list`
+Hãy dùng `git-docs` khi nội dung docs chuẩn nằm trong repo.
 
-Liet ke cac source da cau hinh.
+### **Supabase: sync docs website**
 
-### `docsync source show <name>`
+```bash
+docsync source add supabase \
+  --url https://supabase.com/docs \
+  --kind website \
+  --version-strategy date-snapshot
 
-Hien thi chi tiet mot source.
+docsync sync supabase
+```
 
-### `docsync probe <url>`
+### **Chỉ sync một trang duy nhất**
 
-Probe mot docs URL de kiem tra cac capability quan trong cho sync huong AI:
+```bash
+docsync source add openclaw-getting-started \
+  --url https://docs.openclaw.ai/start/getting-started \
+  --kind website \
+  --version-strategy date-snapshot
 
-- ho tro `Accept: text/markdown`
-- `x-markdown-tokens`
-- `x-original-tokens`
-- `content-signal`
-- `llms.txt`
-- `robots.txt`
-- sitemap
+docsync sync openclaw-getting-started
+```
 
-Lenh nay hien la lenh huu ich nhat vi no cho biet site can adapter strategy nao truoc khi viet crawler.
-Lenh nay cung ton trong `--proxy` hoac configured default proxy khi site chan datacenter IP.
+Phù hợp khi bạn chỉ muốn nhập một page, không cần crawl cả site.
 
-No dong thoi classify URL thanh cac intake mode tong quat nhu:
+## **Cách Nghĩ Về `docsync`**
 
-- discovery root
-- page seed
-- single file asset
-- markdown endpoint
-- `llms` index
-- sitemap hoac robots discovery seed
+Mô hình đơn giản nhất là:
 
-### `docsync import <source>`
+1. **Probe** URL
+2. **Discover** danh sách trang từ `llms.txt`, `llms-full.txt`, sitemap, hoặc page seed
+3. **Fetch** nội dung tốt nhất có thể lấy được
+4. **Normalize** để làm sạch Markdown/MDX
+5. **Ghi snapshot** vào local
+6. **Import** phần thực sự cần import
 
-Import mot snapshot da luu vao OmniMem va ghi `omnimem-import.json` trong snapshot do.
+## **Làm Sạch Dữ Liệu**
 
-Voi incremental snapshot, mac dinh lenh nay chi import cac page `new` va `changed`.
-Dung `--all-pages` neu ban muon full re-import.
-Neu nhieu page normalize thanh cung mot content hash, `docsync import` mac dinh chi import mot ban.
+`docsync` không import thẳng MDX thô.
 
-### `docsync verify <source> <query>`
+Trước khi hash hoặc import, công cụ sẽ làm sạch các phần nhiễu thường gặp như:
 
-Chay OmniMem search helper tren mot snapshot da luu va ghi `omnimem-verify.json`.
+- tiêu đề H1 bị lặp
+- khối boilerplate ở đầu trang
+- component UI như callout, tab, step, card, tooltip
+- wrapper Markdown/MDX không cần thiết
+- các trang trùng nội dung khi import vào OmniMem
 
-### `docsync completions <shell>`
+Điều đó có nghĩa:
 
-Sinh shell completion cho `bash`, `zsh`, `fish`, `elvish`, hoac `powershell`.
+- **`pages/`** chứa nội dung Markdown đã được làm sạch
+- **`raw/`** chứa response gốc lấy từ nguồn
 
-### `docsync migrate`
+## **Incremental Sync**
 
-Rewrite config runtime va snapshot manifests cu sang stable schema hien tai.
+Nếu source đã có snapshot cũ, `docsync` sẽ phân loại page thành:
 
-### `docsync sync <source>`
+- **new**
+- **changed**
+- **unchanged**
+- **removed**
 
-`v1.1.0` thuc hien discovery va sau do chon incremental markdown-first HTTP fetch, HTML fallback, headless fallback, hoac git-native repo sync:
+Mặc định, `docsync import` chỉ nhập:
 
-- snapshot directory
-- `discovery.json`
-- URL frontier da discover tu `llms.txt`, `llms-full.txt`, sitemap index, direct seed page, hoac repo-native docs tree
-- normalized markdown pages trong `pages/`
-- per-page metadata sidecars trong `pages/`
-- raw response bodies trong `raw/`
-- `manifest.json`
-- tuy chon `omnimem-import.json`
-- tuy chon `omnimem-verify.json`
+- **trang mới**
+- **trang đã thay đổi**
 
-Voi `git-docs`, `docsync` clone repo, resolve ref duoc yeu cau, detect hoac dung `docs_path`, snapshot truc tiep cac file markdown, va record nav manifests nhu `meta.json`, `docs.json`, hoac `mint.json`.
-Voi page seed chi tra HTML, `docsync` convert HTML do sang Markdown va luu raw HTML body cung noi dung da normalize.
-Voi nguon Markdown va MDX, `docsync` normalize cac component pho bien nhu callout, tab, step, card, duplicate heading va boilerplate o dau trang truoc khi hash, diff, hoac import.
-Neu da co snapshot truoc do, `docsync` se ghi them `new`, `changed`, `unchanged`, `removed` vao `manifest.json`, reuse page co validator, va report diff counts tren CLI output.
+Nếu nhiều page sau khi normalize cho ra cùng một content hash, mặc định chỉ một bản được import.
 
-## Runtime layout
+Muốn import lại toàn bộ:
+
+```bash
+docsync import openclaw --all-pages
+```
+
+## **Proxy Và Headless**
+
+### **Dùng proxy**
+
+Hỗ trợ:
+
+- **HTTP**
+- **HTTPS**
+- **SOCKS5**
+- **SOCKS5h**
+
+Ví dụ:
+
+```bash
+docsync --proxy socks5h://user:pass@127.0.0.1:1080 probe https://docs.example.com
+```
+
+Hoặc lưu proxy theo từng source:
+
+```bash
+docsync source add blocked-site \
+  --url https://docs.example.com \
+  --kind website \
+  --version-strategy date-snapshot \
+  --proxy http://user:pass@host:port
+```
+
+### **Dùng browser fallback**
+
+```bash
+docsync --browser-cmd /usr/bin/chromium sync some-dynamic-site
+```
+
+Phù hợp với các site docs render nội dung chủ yếu bằng JavaScript.
+
+## **Cấu Trúc Thư Mục Runtime**
 
 ```text
 ~/.docsync/
   config.json
   sources/
   snapshots/
-    postiz/
-      snapshot-20260307/
+    openclaw/
+      snapshot-20260309/
         discovery.json
         manifest.json
         pages/
-          docs.postiz.com/introduction.md
-          docs.postiz.com/introduction.md.json
         raw/
-          docs.postiz.com/introduction.body
+        omnimem-import.json
+        omnimem-verify.json
 ```
 
-## Phat trien
+Các file quan trọng:
 
-Build:
+- **`discovery.json`**: docsync tìm ra frontier bằng cách nào
+- **`manifest.json`**: tóm tắt snapshot, fetch, diff, metadata từng page
+- **`pages/`**: Markdown đã normalize
+- **`raw/`**: nội dung gốc lấy từ nguồn
+
+## **Những Lệnh Quan Trọng Nhất**
 
 ```bash
-cargo build
+docsync init
+docsync paths
+docsync probe <url>
+docsync source add <name> --url <url> ...
+docsync source list
+docsync source show <name>
+docsync sync <name>
+docsync import <name>
+docsync verify <name> "<query>"
+docsync migrate
+docsync completions bash
 ```
 
-Chay test:
+## **Phát Triển**
 
 ```bash
+cargo fmt --check
 cargo test
+cargo build --release
 ```
 
-Format:
+## **Tài Liệu Khác**
 
-```bash
-cargo fmt
-```
-
-## Tai lieu
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [INTAKE_MODEL.md](docs/INTAKE_MODEL.md)
-- [LANGUAGE_POLICY.md](docs/LANGUAGE_POLICY.md)
-- [MIGRATION.md](docs/MIGRATION.md)
-- [RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
-- [USAGE.md](docs/USAGE.md)
-- [RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
-- [ROADMAP.md](ROADMAP.md)
+- [Usage](docs/USAGE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Migration](docs/MIGRATION.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
