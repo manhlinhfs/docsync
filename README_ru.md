@@ -24,9 +24,9 @@
 - **JS-heavy docs** с headless fallback
 - **Git-native docs-репозиториев**
 
-Текущая stable-версия: **`1.3.1`**
+Текущая stable-версия: **`1.3.2`**
 
-Следующие этапы после `v1.3.1`: см. [ROADMAP.md](ROADMAP.md).
+Следующие этапы после `v1.3.2`: см. [ROADMAP.md](ROADMAP.md).
 
 ## **Быстрый Старт**
 
@@ -178,6 +178,11 @@ docsync sync openclaw-getting-started
 Собрать локальный HTML dashboard:
 
 ```bash
+docsync dashboard --all
+docsync dashboard --all --serve --host 0.0.0.0 --port 4317
+docsync dashboard --all --status
+docsync dashboard --all --stop
+
 docsync dashboard openclaw
 docsync dashboard openclaw --serve --host 127.0.0.1 --port 4317
 docsync dashboard openclaw --status

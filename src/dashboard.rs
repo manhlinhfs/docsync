@@ -62,6 +62,15 @@ struct DashboardServerState {
     started_at: String,
 }
 
+#[derive(Debug)]
+struct GlobalSnapshotEntry {
+    source_name: String,
+    snapshot_label: String,
+    manifest: SnapshotManifest,
+    dashboard_path: PathBuf,
+    dashboard_href: String,
+}
+
 pub fn build_dashboard(
     paths: &AppPaths,
     source_name: &str,
@@ -97,6 +106,49 @@ pub fn build_dashboard(
     Ok(DashboardResult {
         source_name: source_name.to_string(),
         snapshot_label: manifest.snapshot_label,
+        output_path,
+        pages_shown,
+        high_quality_pages,
+        medium_quality_pages,
+        low_quality_pages,
+    })
+}
+
+pub fn build_global_dashboard(
+    paths: &AppPaths,
+    output: Option<PathBuf>,
+) -> Result<DashboardResult> {
+    let snapshots = collect_latest_snapshots(paths)?;
+    for entry in &snapshots {
+        let html = render_dashboard_html(&entry.manifest);
+        fs::write(&entry.dashboard_path, html)
+            .with_context(|| format!("failed to write {}", entry.dashboard_path.display()))?;
+    }
+
+    let output_path = output.unwrap_or_else(|| paths.home.join("dashboard.html"));
+    let html = render_global_dashboard_html(&snapshots);
+    fs::write(&output_path, html)
+        .with_context(|| format!("failed to write {}", output_path.display()))?;
+
+    let mut pages_shown = 0usize;
+    let mut high_quality_pages = 0usize;
+    let mut medium_quality_pages = 0usize;
+    let mut low_quality_pages = 0usize;
+
+    for entry in &snapshots {
+        if let Some(fetch) = entry.manifest.fetch.as_ref() {
+            if let Some(quality) = fetch.quality.as_ref() {
+                pages_shown += quality.pages_scored;
+                high_quality_pages += quality.high_quality_pages;
+                medium_quality_pages += quality.medium_quality_pages;
+                low_quality_pages += quality.low_quality_pages;
+            }
+        }
+    }
+
+    Ok(DashboardResult {
+        source_name: "all".to_string(),
+        snapshot_label: "global".to_string(),
         output_path,
         pages_shown,
         high_quality_pages,
@@ -187,6 +239,79 @@ pub fn serve_dashboard(
     })
 }
 
+pub fn serve_global_dashboard(
+    paths: &AppPaths,
+    output: Option<PathBuf>,
+    host: &str,
+    port: u16,
+) -> Result<DashboardServeResult> {
+    let built = build_global_dashboard(paths, output)?;
+    let state_path = global_dashboard_state_path(paths);
+
+    if let Ok(state) = read_dashboard_state(&state_path) {
+        if state.port == port && state.host == host && is_dashboard_running(&state) {
+            return Ok(DashboardServeResult {
+                source_name: built.source_name,
+                snapshot_label: built.snapshot_label,
+                output_path: built.output_path,
+                state_path,
+                host: state.host,
+                port: state.port,
+                url: state.url,
+                pid: state.pid,
+                already_running: true,
+            });
+        }
+        let _ = stop_process(state.pid);
+        let _ = fs::remove_file(&state_path);
+    }
+
+    let exe = std::env::current_exe().context("failed to resolve current executable")?;
+    let mut child = Command::new(exe);
+    child
+        .arg("--home")
+        .arg(&paths.home)
+        .arg("dashboard-host")
+        .arg("--root")
+        .arg(&paths.home)
+        .arg("--host")
+        .arg(host)
+        .arg("--port")
+        .arg(port.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let child = child
+        .spawn()
+        .context("failed to start global dashboard server")?;
+    let pid = child.id();
+
+    let state = DashboardServerState {
+        source_name: "all".to_string(),
+        snapshot_label: "global".to_string(),
+        root_dir: paths.home.clone(),
+        output_path: built.output_path.clone(),
+        host: host.to_string(),
+        port,
+        url: dashboard_url(host, port),
+        pid,
+        started_at: now_utc_rfc3339(),
+    };
+    write_dashboard_state(&state_path, &state)?;
+
+    Ok(DashboardServeResult {
+        source_name: built.source_name,
+        snapshot_label: built.snapshot_label,
+        output_path: built.output_path,
+        state_path,
+        host: host.to_string(),
+        port,
+        url: state.url,
+        pid,
+        already_running: false,
+    })
+}
+
 pub fn dashboard_status(
     paths: &AppPaths,
     source_name: &str,
@@ -223,12 +348,55 @@ pub fn dashboard_status(
     })
 }
 
+pub fn global_dashboard_status(paths: &AppPaths) -> Result<DashboardServerStatus> {
+    let state_path = global_dashboard_state_path(paths);
+    let state = read_dashboard_state(&state_path).ok();
+
+    if let Some(state) = state {
+        let running = is_dashboard_running(&state);
+        return Ok(DashboardServerStatus {
+            source_name: "all".to_string(),
+            snapshot_label: "global".to_string(),
+            running,
+            host: state.host.clone(),
+            port: state.port,
+            url: state.url.clone(),
+            pid: if running { Some(state.pid) } else { None },
+            state_path,
+        });
+    }
+
+    Ok(DashboardServerStatus {
+        source_name: "all".to_string(),
+        snapshot_label: "global".to_string(),
+        running: false,
+        host: "127.0.0.1".to_string(),
+        port: 4317,
+        url: dashboard_url("127.0.0.1", 4317),
+        pid: None,
+        state_path,
+    })
+}
+
 pub fn stop_dashboard(
     paths: &AppPaths,
     source_name: &str,
     reference: Option<String>,
 ) -> Result<DashboardServerStatus> {
     let status = dashboard_status(paths, source_name, reference)?;
+    if let Ok(state) = read_dashboard_state(&status.state_path) {
+        let _ = stop_process(state.pid);
+        let _ = fs::remove_file(&status.state_path);
+    }
+    Ok(DashboardServerStatus {
+        running: false,
+        pid: None,
+        ..status
+    })
+}
+
+pub fn stop_global_dashboard(paths: &AppPaths) -> Result<DashboardServerStatus> {
+    let status = global_dashboard_status(paths)?;
     if let Ok(state) = read_dashboard_state(&status.state_path) {
         let _ = stop_process(state.pid);
         let _ = fs::remove_file(&status.state_path);
@@ -252,6 +420,209 @@ pub fn run_dashboard_host(root: &Path, host: &str, port: u16) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn render_global_dashboard_html(snapshots: &[GlobalSnapshotEntry]) -> String {
+    let mut sources = 0usize;
+    let mut pages = 0usize;
+    let mut high = 0usize;
+    let mut medium = 0usize;
+    let mut low = 0usize;
+    let rows = snapshots
+        .iter()
+        .map(|entry| {
+            sources += 1;
+            let (stored_pages, changed_pages, high_pages, medium_pages, low_pages) =
+                if let Some(fetch) = entry.manifest.fetch.as_ref() {
+                    let quality = fetch.quality.as_ref();
+                    pages += fetch.stored_pages;
+                    (
+                        fetch.stored_pages,
+                        entry
+                            .manifest
+                            .diff
+                            .as_ref()
+                            .map(|diff| diff.new_pages + diff.changed_pages)
+                            .unwrap_or(0),
+                        quality.map(|value| value.high_quality_pages).unwrap_or(0),
+                        quality.map(|value| value.medium_quality_pages).unwrap_or(0),
+                        quality.map(|value| value.low_quality_pages).unwrap_or(0),
+                    )
+                } else {
+                    (0, 0, 0, 0, 0)
+                };
+            high += high_pages;
+            medium += medium_pages;
+            low += low_pages;
+            format!(
+                r#"<tr>
+  <td><a href="{dashboard_link}">{source}</a><div class="small">{entry_url}</div></td>
+  <td><span class="mono">{snapshot}</span></td>
+  <td>{stored}</td>
+  <td>{changed}</td>
+  <td><span class="badge high">high {high}</span> <span class="badge medium">medium {medium}</span> <span class="badge low">low {low}</span></td>
+  <td><span class="mono">{kind}</span></td>
+  <td><span class="mono">{status}</span></td>
+</tr>"#,
+                dashboard_link = escape_html(&entry.dashboard_href),
+                source = escape_html(&entry.source_name),
+                entry_url = escape_html(&entry.manifest.entry_url),
+                snapshot = escape_html(&entry.snapshot_label),
+                stored = stored_pages,
+                changed = changed_pages,
+                high = high_pages,
+                medium = medium_pages,
+                low = low_pages,
+                kind = escape_html(&entry.manifest.source_kind.to_string()),
+                status = escape_html(&entry.manifest.status),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>docsync dashboard</title>
+  <style>
+    :root {{
+      --bg: #0c1116;
+      --panel: rgba(17, 25, 35, 0.94);
+      --panel-2: rgba(11, 17, 24, 0.84);
+      --text: #edf3f8;
+      --muted: #99a9b9;
+      --line: rgba(187, 204, 222, 0.14);
+      --accent: #7ed7b7;
+      --warn: #f4c66d;
+      --bad: #ff8b88;
+      --shadow: 0 22px 80px rgba(0, 0, 0, 0.34);
+      --font-ui: "IBM Plex Sans", "Segoe UI", sans-serif;
+      --font-mono: "IBM Plex Mono", monospace;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: var(--font-ui);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(126, 215, 183, 0.14), transparent 28%),
+        radial-gradient(circle at right top, rgba(108, 162, 255, 0.10), transparent 24%),
+        linear-gradient(180deg, #0c1116, #0e1620 45%, #0c1116);
+    }}
+    .shell {{ max-width: 1360px; margin: 0 auto; padding: 28px 20px 54px; }}
+    .hero {{
+      background: linear-gradient(180deg, rgba(18, 27, 38, 0.94), rgba(12, 19, 27, 0.88));
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 30px;
+      box-shadow: var(--shadow);
+    }}
+    .eyebrow {{ font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--accent); }}
+    h1 {{ margin: 10px 0 8px; font-size: clamp(38px, 6vw, 72px); line-height: 0.92; }}
+    .hero p {{ max-width: 860px; color: var(--muted); font-size: 16px; line-height: 1.6; }}
+    .stats {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-top: 22px; }}
+    .card {{ background: var(--panel-2); border:1px solid var(--line); border-radius:18px; padding:16px 18px; }}
+    .label {{ font-family: var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); }}
+    .value {{ margin-top:8px; font-size:30px; font-weight:700; }}
+    .sub {{ margin-top:6px; color:var(--muted); font-size:13px; }}
+    .table-wrap {{ overflow:auto; border:1px solid var(--line); border-radius:20px; background: rgba(10,16,23,0.84); box-shadow: var(--shadow); margin-top: 22px; }}
+    table {{ width:100%; border-collapse:collapse; min-width: 980px; }}
+    thead th {{ position:sticky; top:0; background: rgba(12,19,27,0.98); text-align:left; padding:14px 16px; font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:var(--muted); border-bottom:1px solid var(--line); }}
+    tbody td {{ padding:14px 16px; border-bottom:1px solid rgba(182,201,222,0.08); vertical-align:top; font-size:14px; }}
+    tbody tr:hover {{ background: rgba(126,215,183,0.05); }}
+    .mono {{ font-family: var(--font-mono); font-size:12px; color:var(--muted); }}
+    .badge {{ display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; border:1px solid currentColor; }}
+    .high {{ color: var(--accent); }}
+    .medium {{ color: var(--warn); }}
+    .low {{ color: var(--bad); }}
+    a {{ color:#b9dbff; text-decoration:none; }} a:hover {{ text-decoration:underline; }}
+    .small {{ font-size:12px; color: var(--muted); margin-top:4px; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="eyebrow">docsync control center</div>
+      <h1>All Sources</h1>
+      <p>Global snapshot overview across every tracked source. Open any row to inspect the latest per-source dashboard, quality mix, and change volume.</p>
+      <div class="stats">
+        <div class="card"><div class="label">Sources</div><div class="value">{sources}</div><div class="sub">Latest snapshot per source</div></div>
+        <div class="card"><div class="label">Stored Pages</div><div class="value">{pages}</div><div class="sub">Across latest snapshots</div></div>
+        <div class="card"><div class="label">High Quality</div><div class="value">{high}</div><div class="sub">Strong import-ready content</div></div>
+        <div class="card"><div class="label">Medium Quality</div><div class="value">{medium}</div><div class="sub">Needs occasional review</div></div>
+        <div class="card"><div class="label">Low Quality</div><div class="value">{low}</div><div class="sub">Thin, noisy, or weakly structured pages</div></div>
+      </div>
+    </section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Source</th><th>Snapshot</th><th>Stored</th><th>Changed</th><th>Quality Mix</th><th>Kind</th><th>Status</th></tr>
+        </thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>"#,
+        sources = sources,
+        pages = pages,
+        high = high,
+        medium = medium,
+        low = low,
+        rows = rows,
+    )
+}
+
+fn collect_latest_snapshots(paths: &AppPaths) -> Result<Vec<GlobalSnapshotEntry>> {
+    let mut entries = Vec::new();
+    if !paths.snapshots_dir.is_dir() {
+        return Ok(entries);
+    }
+
+    for source_entry in fs::read_dir(&paths.snapshots_dir)
+        .with_context(|| format!("failed to read {}", paths.snapshots_dir.display()))?
+    {
+        let source_entry = source_entry?;
+        let source_dir = source_entry.path();
+        if !source_dir.is_dir() {
+            continue;
+        }
+        let source_name = source_entry.file_name().to_string_lossy().to_string();
+        let snapshot_dir = latest_snapshot_dir(&source_dir)
+            .with_context(|| format!("no snapshots found for source `{source_name}`"))?;
+        let manifest = read_snapshot_manifest(&snapshot_dir)?;
+        let dashboard_path = snapshot_dir.join("dashboard.html");
+        let dashboard_href = format!(
+            "snapshots/{}/{}/dashboard.html",
+            source_name, manifest.snapshot_label
+        );
+        entries.push(GlobalSnapshotEntry {
+            source_name,
+            snapshot_label: manifest.snapshot_label.clone(),
+            manifest,
+            dashboard_path,
+            dashboard_href,
+        });
+    }
+
+    entries.sort_by(|left, right| left.source_name.cmp(&right.source_name));
+    Ok(entries)
+}
+
+fn latest_snapshot_dir(source_dir: &Path) -> Result<PathBuf> {
+    let mut entries = fs::read_dir(source_dir)
+        .with_context(|| format!("failed to read {}", source_dir.display()))?
+        .filter_map(|entry| entry.ok().map(|value| value.path()))
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries
+        .into_iter()
+        .last()
+        .with_context(|| format!("no snapshots found in {}", source_dir.display()))
 }
 
 fn render_dashboard_html(manifest: &SnapshotManifest) -> String {
@@ -712,6 +1083,10 @@ fn dashboard_state_path(paths: &AppPaths, source_name: &str, snapshot_label: &st
     ))
 }
 
+fn global_dashboard_state_path(paths: &AppPaths) -> PathBuf {
+    paths.home.join("dashboard-server-all.json")
+}
+
 fn write_dashboard_state(path: &Path, state: &DashboardServerState) -> Result<()> {
     fs::write(path, serde_json::to_string_pretty(state)?)
         .with_context(|| format!("failed to write {}", path.display()))
@@ -818,7 +1193,7 @@ mod tests {
 
     use anyhow::Result;
 
-    use super::build_dashboard;
+    use super::{build_dashboard, build_global_dashboard};
     use crate::config::AppPaths;
     use crate::models::{
         DiscoverySummary, FetchSummary, PageChangeStatus, PageManifestEntry, SnapshotManifest,
@@ -929,6 +1304,131 @@ mod tests {
         assert!(html.contains("score 90"));
 
         fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn writes_global_dashboard_for_multiple_sources() -> Result<()> {
+        let root = make_temp_dir("dashboard-global");
+        let paths = AppPaths {
+            home: root.clone(),
+            config_file: root.join("config.json"),
+            sources_dir: root.join("sources"),
+            snapshots_dir: root.join("snapshots"),
+        };
+
+        write_snapshot_fixture(&paths, "openclaw", "snap-a", "https://docs.openclaw.ai/")?;
+        write_snapshot_fixture(&paths, "supabase", "snap-b", "https://supabase.com/docs")?;
+
+        let result = build_global_dashboard(&paths, None)?;
+        let html = fs::read_to_string(&result.output_path)?;
+        assert!(html.contains("All Sources"));
+        assert!(html.contains("openclaw"));
+        assert!(html.contains("supabase"));
+        assert!(html.contains("snapshots/openclaw/snap-a/dashboard.html"));
+
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn write_snapshot_fixture(
+        paths: &AppPaths,
+        source_name: &str,
+        snapshot_label: &str,
+        entry_url: &str,
+    ) -> Result<()> {
+        let snapshot_dir = paths.snapshots_dir.join(source_name).join(snapshot_label);
+        fs::create_dir_all(snapshot_dir.join("pages"))?;
+        fs::write(snapshot_dir.join("pages/intro.md"), "# Intro\n")?;
+        let manifest = SnapshotManifest {
+            schema_version: 7,
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            source_name: source_name.to_string(),
+            entry_url: entry_url.to_string(),
+            source_kind: SourceKind::Website,
+            version_strategy: VersionStrategy::DateSnapshot,
+            source_ref: snapshot_label.to_string(),
+            snapshot_label: snapshot_label.to_string(),
+            snapshot_dir: snapshot_dir.clone(),
+            status: "fetched".to_string(),
+            previous_snapshot_label: None,
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            discovery: DiscoverySummary {
+                manifest_path: snapshot_dir.join("discovery.json"),
+                adapters: vec!["seed_page".to_string()],
+                frontier_count: 1,
+                llms_index_url: None,
+                llms_full_index_url: None,
+                sitemap_count: 0,
+            },
+            git: None,
+            fetch: Some(FetchSummary {
+                attempted: 1,
+                stored_pages: 1,
+                skipped_pages: 0,
+                reused_pages: 0,
+                normalized_pages: 1,
+                normalization_changed_pages: 1,
+                quality: Some(QualitySummary {
+                    pages_scored: 1,
+                    high_quality_pages: 1,
+                    medium_quality_pages: 0,
+                    low_quality_pages: 0,
+                    missing_title_pages: 0,
+                    residual_markup_pages: 0,
+                }),
+                method_counts: std::collections::BTreeMap::new(),
+            }),
+            diff: Some(crate::models::DiffSummary {
+                previous_snapshot_label: None,
+                new_pages: 1,
+                changed_pages: 0,
+                unchanged_pages: 0,
+                removed_pages: 0,
+                import_candidates: 1,
+            }),
+            pages: vec![PageManifestEntry {
+                page_key: format!("{entry_url}intro"),
+                url: format!("{entry_url}intro"),
+                final_url: format!("{entry_url}intro"),
+                fetch_method: "markdown_negotiation".to_string(),
+                status: "stored".to_string(),
+                change_status: PageChangeStatus::New,
+                reused_from_snapshot: None,
+                page_path: Some(snapshot_dir.join("pages/intro.md")),
+                metadata_path: None,
+                raw_path: None,
+                rendered_raw_path: None,
+                content_type: Some("text/markdown".to_string()),
+                sha256: Some("abc".to_string()),
+                raw_sha256: None,
+                etag: None,
+                last_modified: None,
+                byte_size: 10,
+                normalization: None,
+                quality: Some(PageQualitySummary {
+                    score: 90,
+                    rating: PageQualityRating::High,
+                    word_count: 100,
+                    non_empty_lines: 10,
+                    text_lines: 8,
+                    heading_count: 2,
+                    code_block_count: 0,
+                    link_count: 0,
+                    residual_html_tags: 0,
+                    residual_mdx_components: 0,
+                    title_present: true,
+                    text_density: 0.8,
+                    low_signal_reasons: Vec::new(),
+                }),
+            }],
+            notes: Vec::new(),
+        };
+        fs::write(
+            snapshot_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)?,
+        )?;
         Ok(())
     }
 

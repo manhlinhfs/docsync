@@ -28,7 +28,9 @@ use serde::Serialize;
 use crate::cli::{Cli, Commands, CompletionShell, NotifyCommands, SourceCommands};
 use crate::config::{ensure_layout, load_config, resolve_paths};
 use crate::dashboard::{
-    build_dashboard, dashboard_status, run_dashboard_host, serve_dashboard, stop_dashboard,
+    build_dashboard, build_global_dashboard, dashboard_status, global_dashboard_status,
+    run_dashboard_host, serve_dashboard, serve_global_dashboard, stop_dashboard,
+    stop_global_dashboard,
 };
 use crate::migrate::migrate_runtime;
 use crate::models::NewSource;
@@ -108,8 +110,22 @@ fn run() -> Result<()> {
             if mode_count > 1 {
                 anyhow::bail!("choose at most one of --serve, --stop, or --status");
             }
+            if args.all && args.reference.is_some() {
+                anyhow::bail!("--ref is only valid for source-specific dashboards");
+            }
+            if !args.all && args.name.is_none() {
+                anyhow::bail!("provide a source name or use --all");
+            }
             if args.stop {
-                let result = stop_dashboard(&paths, &args.name, args.reference)?;
+                let result = if args.all {
+                    stop_global_dashboard(&paths)?
+                } else {
+                    stop_dashboard(
+                        &paths,
+                        args.name.as_deref().expect("source name"),
+                        args.reference,
+                    )?
+                };
                 if args.json {
                     print_json(&result)?;
                 } else {
@@ -119,7 +135,15 @@ fn run() -> Result<()> {
                     println!("State file: {}", result.state_path.display());
                 }
             } else if args.status {
-                let result = dashboard_status(&paths, &args.name, args.reference)?;
+                let result = if args.all {
+                    global_dashboard_status(&paths)?
+                } else {
+                    dashboard_status(
+                        &paths,
+                        args.name.as_deref().expect("source name"),
+                        args.reference,
+                    )?
+                };
                 if args.json {
                     print_json(&result)?;
                 } else {
@@ -135,14 +159,18 @@ fn run() -> Result<()> {
                     println!("State file: {}", result.state_path.display());
                 }
             } else if args.serve {
-                let result = serve_dashboard(
-                    &paths,
-                    &args.name,
-                    args.reference,
-                    args.output,
-                    &args.host,
-                    args.port,
-                )?;
+                let result = if args.all {
+                    serve_global_dashboard(&paths, args.output, &args.host, args.port)?
+                } else {
+                    serve_dashboard(
+                        &paths,
+                        args.name.as_deref().expect("source name"),
+                        args.reference,
+                        args.output,
+                        &args.host,
+                        args.port,
+                    )?
+                };
                 if args.json {
                     print_json(&result)?;
                 } else {
@@ -157,7 +185,16 @@ fn run() -> Result<()> {
                     println!("State file: {}", result.state_path.display());
                 }
             } else {
-                let result = build_dashboard(&paths, &args.name, args.reference, args.output)?;
+                let result = if args.all {
+                    build_global_dashboard(&paths, args.output)?
+                } else {
+                    build_dashboard(
+                        &paths,
+                        args.name.as_deref().expect("source name"),
+                        args.reference,
+                        args.output,
+                    )?
+                };
                 if args.json {
                     print_json(&result)?;
                 } else {

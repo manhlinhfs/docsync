@@ -24,9 +24,9 @@ It works well for:
 - **JS-heavy docs** with optional headless fallback
 - **Git-native docs repos**
 
-Current stable version: **`1.3.1`**
+Current stable version: **`1.3.2`**
 
-Planned milestones after `v1.3.1`: see [ROADMAP.md](ROADMAP.md).
+Planned milestones after `v1.3.2`: see [ROADMAP.md](ROADMAP.md).
 
 ## **Quick Start**
 
@@ -176,6 +176,11 @@ Each stored page now gets a quality score based on:
 Build a browser-friendly review page with:
 
 ```bash
+docsync dashboard --all
+docsync dashboard --all --serve --host 0.0.0.0 --port 4317
+docsync dashboard --all --status
+docsync dashboard --all --stop
+
 docsync dashboard openclaw
 docsync dashboard openclaw --serve --host 127.0.0.1 --port 4317
 docsync dashboard openclaw --status

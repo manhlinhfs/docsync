@@ -1,5 +1,17 @@
 # Changelog
 
+## `1.3.2` - 2026-03-09
+
+Added:
+
+- `docsync dashboard --all` to build and serve a global dashboard across all tracked sources
+- global dashboard links to the latest per-source snapshot dashboards under the same web root
+
+Changed:
+
+- the `dashboard` source argument is now optional when `--all` is used
+- built-in dashboard server control now works for both single-source and global dashboards
+
 ## `1.3.1` - 2026-03-09
 
 Added:

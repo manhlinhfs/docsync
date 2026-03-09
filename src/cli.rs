@@ -69,7 +69,10 @@ pub struct ProbeArgs {
 
 #[derive(Debug, Args)]
 pub struct DashboardArgs {
-    pub name: String,
+    pub name: Option<String>,
+
+    #[arg(long)]
+    pub all: bool,
 
     #[arg(long = "ref")]
     pub reference: Option<String>,

@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap is version-first, not date-first. `docsync` is currently stable at `v1.3.1`.
+This roadmap is version-first, not date-first. `docsync` is currently stable at `v1.3.2`.
 
 ## Release themes
 
@@ -173,9 +173,9 @@ Exit criteria:
 - manifests are backward-compatible or migratable
 - release notes communicate upgrade guarantees
 
-## Milestones after `v1.3.1`
+## Milestones after `v1.3.2`
 
-Development after `v1.3.1` should move in milestone order unless a regression, release blocker, or security issue needs to interrupt the sequence.
+Development after `v1.3.2` should move in milestone order unless a regression, release blocker, or security issue needs to interrupt the sequence.
 
 ### `v1.2.0` Multi-Engine Normalization
 
