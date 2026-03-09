@@ -341,7 +341,7 @@ where
     fs::write(path, body).with_context(|| format!("failed to write {}", path.display()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
