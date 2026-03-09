@@ -477,10 +477,8 @@ fn make_checkout_dir() -> Result<PathBuf> {
 }
 
 fn run_git(cwd: Option<&Path>, args: &[&str], proxy_url: Option<&str>) -> Result<()> {
-    let mut command = Command::new("git");
-    command
-        .args(args)
-        .current_dir(cwd.unwrap_or_else(|| Path::new(".")));
+    let mut command = base_git_command(cwd);
+    command.args(args);
     apply_proxy_to_git_command(&mut command, proxy_url);
     let output = command
         .output()
@@ -498,9 +496,8 @@ fn run_git(cwd: Option<&Path>, args: &[&str], proxy_url: Option<&str>) -> Result
 }
 
 fn run_git_capture(cwd: Option<&Path>, args: &[&str]) -> Result<String> {
-    let output = Command::new("git")
+    let output = base_git_command(cwd)
         .args(args)
-        .current_dir(cwd.unwrap_or_else(|| Path::new(".")))
         .output()
         .with_context(|| format!("failed to execute git {}", args.join(" ")))?;
 
@@ -513,6 +510,15 @@ fn run_git_capture(cwd: Option<&Path>, args: &[&str]) -> Result<String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn base_git_command(cwd: Option<&Path>) -> Command {
+    let mut command = Command::new("git");
+    // Force checkout content to stay LF-normalized so incremental hashes are stable across OSes.
+    command
+        .args(["-c", "core.autocrlf=false", "-c", "core.eol=lf"])
+        .current_dir(cwd.unwrap_or_else(|| Path::new(".")));
+    command
 }
 
 #[cfg(test)]
