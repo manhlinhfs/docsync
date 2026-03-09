@@ -298,8 +298,10 @@ fn parse_llms_urls(base_url: &Url, body: &str) -> Vec<String> {
         }
 
         for token in line.split_whitespace() {
-            let trimmed = token.trim_matches(|ch: char| "\"'()[]<>{},".contains(ch));
-            if let Some(url) = parse_absolute_http_url(trimmed) {
+            let trimmed = token.trim_matches(|ch: char| "\"'`()[]<>{},".contains(ch));
+            if let Some(url) = parse_absolute_http_url(trimmed)
+                .filter(|url| is_llms_frontier_candidate(base_url, url))
+            {
                 urls.insert(canonicalize_url(&url));
             }
         }
@@ -395,14 +397,19 @@ fn resolve_llms_link(base_url: &Url, value: &str) -> Option<Url> {
     }
 
     if let Some(url) = parse_absolute_http_url(trimmed) {
-        return Some(url);
+        return is_llms_frontier_candidate(base_url, &url).then_some(url);
     }
 
     if trimmed.starts_with('/') || trimmed.starts_with("./") || trimmed.starts_with("../") {
-        return base_url.join(trimmed).ok();
+        let url = base_url.join(trimmed).ok()?;
+        return is_llms_frontier_candidate(base_url, &url).then_some(url);
     }
 
     None
+}
+
+fn is_llms_frontier_candidate(base_url: &Url, candidate: &Url) -> bool {
+    candidate.host_str().is_some() && candidate.host_str() == base_url.host_str()
 }
 
 fn parse_absolute_http_url(value: &str) -> Option<Url> {
@@ -545,6 +552,22 @@ mod tests {
         let base = Url::parse("https://docs.example.com/llms.txt").expect("base URL");
         assert!(resolve_llms_link(&base, "mailto:test@example.com").is_none());
         assert!(resolve_llms_link(&base, "accesstoken:/").is_none());
+    }
+
+    #[test]
+    fn ignores_external_and_placeholder_llms_targets() {
+        let base = Url::parse("https://docs.openclaw.ai/llms-full.txt").expect("base URL");
+        let body = "\
+- [Intro](https://docs.openclaw.ai/start/getting-started)\n\
+- https://example.com/outside\n\
+- `http://127.0.0.1:18789/`\n\
+- `http://...`/\n";
+
+        let urls = parse_llms_urls(&base, body);
+        assert_eq!(
+            urls,
+            vec!["https://docs.openclaw.ai/start/getting-started".to_string()]
+        );
     }
 
     #[test]
