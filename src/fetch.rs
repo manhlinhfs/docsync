@@ -623,8 +623,8 @@ mod tests {
     fn preserves_markdown_filenames_without_double_extension() {
         let path = markdown_page_path(Path::new("/tmp/pages"), "docs.example.com/intro.md");
         assert_eq!(
-            path.to_string_lossy(),
-            "/tmp/pages/docs.example.com/intro.md"
+            path,
+            Path::new("/tmp/pages").join("docs.example.com/intro.md")
         );
     }
 
@@ -632,8 +632,8 @@ mod tests {
     fn metadata_path_uses_page_filename() {
         let metadata = metadata_path_for(Path::new("/tmp/pages/docs.example.com/intro.md"));
         assert_eq!(
-            metadata.to_string_lossy(),
-            "/tmp/pages/docs.example.com/intro.md.json"
+            metadata,
+            Path::new("/tmp/pages").join("docs.example.com/intro.md.json")
         );
     }
 }

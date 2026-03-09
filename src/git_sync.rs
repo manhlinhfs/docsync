@@ -743,6 +743,7 @@ mod tests {
         git(&repo, &["init", "-b", "main"])?;
         git(&repo, &["config", "user.name", "Docsync Test"])?;
         git(&repo, &["config", "user.email", "docsync@example.com"])?;
+        git(&repo, &["config", "core.autocrlf", "false"])?;
 
         fs::create_dir_all(repo.join("docs/guide"))?;
         fs::write(repo.join("docs/meta.json"), "{\"title\":\"Docs\"}")?;
