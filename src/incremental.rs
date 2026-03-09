@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::config::AppPaths;
 use crate::models::{PageManifestEntry, SnapshotManifest};
+use crate::normalize::NormalizationSummary;
 
 #[derive(Debug, Clone)]
 pub struct PreviousSnapshot {
@@ -28,6 +29,7 @@ pub struct PreviousPageState {
     pub content_type: Option<String>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
+    pub normalization: Option<NormalizationSummary>,
 }
 
 pub fn find_previous_snapshot(
@@ -95,6 +97,7 @@ pub fn previous_page_index(
             content_type: entry.content_type.clone(),
             etag: entry.etag.clone(),
             last_modified: entry.last_modified.clone(),
+            normalization: entry.normalization.clone(),
         };
         index.insert(key.clone(), state.clone());
         if !entry.url.is_empty() {

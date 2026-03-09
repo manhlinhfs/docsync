@@ -46,7 +46,7 @@ Headless browser fallback co the cau hinh qua:
 
 ## Trang thai
 
-Version hien tai: `1.0.0`
+Version hien tai: `1.1.0`
 
 Ban phat hanh nay tap trung vao:
 
@@ -58,7 +58,8 @@ Ban phat hanh nay tap trung vao:
 - HTML fallback conversion cho cac website page khong expose markdown truc tiep
 - incremental sync voi snapshot lineage, diff summary, reused pages, va removed page tracking
 - headless browser fallback cho dynamic docs page khi static HTML extraction qua mong
-- lenh import va verify voi OmniMem, kem changed-only incremental import mac dinh
+- markdown/MDX normalization de loai bo boilerplate pho bien cua docs va flatten cac UI component truoc khi hash hoac import
+- lenh import va verify voi OmniMem, kem changed-only incremental import mac dinh va bo qua duplicate content trong cung snapshot
 - migrate command cho runtime schema va compatibility guarantee cho manifest/config
 - shell completions, GitHub Actions CI/release automation, va install scripts
 
@@ -164,6 +165,7 @@ Import mot snapshot da luu vao OmniMem va ghi `omnimem-import.json` trong snapsh
 
 Voi incremental snapshot, mac dinh lenh nay chi import cac page `new` va `changed`.
 Dung `--all-pages` neu ban muon full re-import.
+Neu nhieu page normalize thanh cung mot content hash, `docsync import` mac dinh chi import mot ban.
 
 ### `docsync verify <source> <query>`
 
@@ -179,12 +181,12 @@ Rewrite config runtime va snapshot manifests cu sang stable schema hien tai.
 
 ### `docsync sync <source>`
 
-`v1.0.0` thuc hien discovery va sau do chon incremental markdown-first HTTP fetch, HTML fallback, headless fallback, hoac git-native repo sync:
+`v1.1.0` thuc hien discovery va sau do chon incremental markdown-first HTTP fetch, HTML fallback, headless fallback, hoac git-native repo sync:
 
 - snapshot directory
 - `discovery.json`
 - URL frontier da discover tu `llms.txt`, `llms-full.txt`, sitemap index, direct seed page, hoac repo-native docs tree
-- markdown pages trong `pages/`
+- normalized markdown pages trong `pages/`
 - per-page metadata sidecars trong `pages/`
 - raw response bodies trong `raw/`
 - `manifest.json`
@@ -193,6 +195,7 @@ Rewrite config runtime va snapshot manifests cu sang stable schema hien tai.
 
 Voi `git-docs`, `docsync` clone repo, resolve ref duoc yeu cau, detect hoac dung `docs_path`, snapshot truc tiep cac file markdown, va record nav manifests nhu `meta.json`, `docs.json`, hoac `mint.json`.
 Voi page seed chi tra HTML, `docsync` convert HTML do sang Markdown va luu raw HTML body cung noi dung da normalize.
+Voi nguon Markdown va MDX, `docsync` normalize cac component pho bien nhu callout, tab, step, card, duplicate heading va boilerplate o dau trang truoc khi hash, diff, hoac import.
 Neu da co snapshot truoc do, `docsync` se ghi them `new`, `changed`, `unchanged`, `removed` vao `manifest.json`, reuse page co validator, va report diff counts tren CLI output.
 
 ## Runtime layout

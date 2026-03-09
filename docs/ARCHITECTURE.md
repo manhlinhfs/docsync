@@ -75,7 +75,8 @@ Current implementation reaches all five steps:
 - fetch pages with `Accept: text/markdown`
 - fall back to HTML-to-Markdown conversion when direct markdown is unavailable
 - invoke a headless browser fallback when static HTML extraction is too thin for JS-heavy pages
-- store markdown bodies under `pages/`
+- normalize Markdown and MDX before hashing, diffing, import, and snapshot writes
+- store normalized markdown bodies under `pages/`
 - archive raw response bodies under `raw/`
 - write per-page metadata JSON sidecars with response headers and hashes
 - reuse validator-backed pages from previous snapshots when possible
@@ -99,9 +100,9 @@ Current discovery snapshots record:
 - deduped URL frontier
 - llms and sitemap provenance
 - optional git summary with resolved ref, docs path, and nav manifests
-- fetch summary with stored/skipped/reused counts
+- fetch summary with stored/skipped/reused counts plus normalization coverage
 - diff summary with `new`, `changed`, `unchanged`, and `removed`
-- per-page fetch method, content hashes, validator headers, and optional reused-from metadata
+- per-page fetch method, normalization summary, content hashes, validator headers, and optional reused-from metadata
 - optional OmniMem import and verify logs per snapshot
 
 ## Runtime files

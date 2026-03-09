@@ -16,6 +16,7 @@ use crate::models::{
     SourceDefinition,
 };
 use crate::network::build_http_client;
+use crate::normalize::normalize_markdown;
 use crate::util::{ensure_directory, now_utc_rfc3339};
 
 #[derive(Debug, Serialize)]
@@ -46,6 +47,8 @@ pub fn fetch_snapshot_pages(
     let mut stored_pages = 0usize;
     let mut skipped_pages = 0usize;
     let mut reused_pages = 0usize;
+    let mut normalized_pages = 0usize;
+    let mut normalization_changed_pages = 0usize;
     let mut seen_keys = BTreeSet::new();
 
     for page in frontier {
@@ -69,6 +72,16 @@ pub fn fetch_snapshot_pages(
 
         if fetched.page_path.is_some() {
             stored_pages += 1;
+            if fetched.normalization.is_some() {
+                normalized_pages += 1;
+            }
+            if fetched
+                .normalization
+                .as_ref()
+                .is_some_and(|value| value.changed)
+            {
+                normalization_changed_pages += 1;
+            }
         } else {
             skipped_pages += 1;
         }
@@ -101,6 +114,7 @@ pub fn fetch_snapshot_pages(
                     etag: previous.etag.clone(),
                     last_modified: previous.last_modified.clone(),
                     byte_size: 0,
+                    normalization: previous.normalization.clone(),
                 });
             }
         }
@@ -112,6 +126,8 @@ pub fn fetch_snapshot_pages(
             stored_pages,
             skipped_pages,
             reused_pages,
+            normalized_pages,
+            normalization_changed_pages,
             method_counts,
         },
         pages: manifest_pages,
@@ -195,7 +211,7 @@ fn fetch_one_page(
                 };
             if page_path.is_file() {
                 let metadata = PageMetadata {
-                    schema_version: 2,
+                    schema_version: 3,
                     fetched_at: now_utc_rfc3339(),
                     source_name: source.name.clone(),
                     snapshot_label: snapshot_label.to_string(),
@@ -220,6 +236,7 @@ fn fetch_one_page(
                         .clone()
                         .unwrap_or_else(|| raw_root.join(format!("{stem}.missing.body"))),
                     rendered_raw_path: rendered_raw_output_path.clone(),
+                    normalization: previous.normalization.clone(),
                 };
                 write_json(&metadata_path, &metadata)?;
             }
@@ -250,6 +267,7 @@ fn fetch_one_page(
                 etag: previous.etag.clone(),
                 last_modified: previous.last_modified.clone(),
                 byte_size,
+                normalization: previous.normalization.clone(),
             });
         }
     }
@@ -258,17 +276,20 @@ fn fetch_one_page(
         .bytes()
         .with_context(|| format!("failed to read {}", page.url))?;
     let body_vec = body.to_vec();
-    let byte_size = body_vec.len() as u64;
     let raw_sha256 = sha256_hex(&body_vec);
     write_bytes(&raw_path, &body_vec)?;
 
     let markdown_supported = is_markdown_response(&final_url, content_type.as_deref());
     if markdown_supported && (200..300).contains(&status_code) {
-        write_bytes(&page_path, &body_vec)?;
-        let content_hash = sha256_hex(&body_vec);
+        let markdown = String::from_utf8_lossy(&body_vec);
+        let normalized = normalize_markdown(&markdown);
+        let normalized_bytes = normalized.markdown.as_bytes();
+        let byte_size = normalized_bytes.len() as u64;
+        write_bytes(&page_path, normalized_bytes)?;
+        let content_hash = sha256_hex(normalized_bytes);
         let change_status = compare_change(previous, &content_hash);
         let metadata = PageMetadata {
-            schema_version: 2,
+            schema_version: 3,
             fetched_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             snapshot_label: snapshot_label.to_string(),
@@ -291,6 +312,7 @@ fn fetch_one_page(
             page_path: page_path.clone(),
             raw_path: raw_path.clone(),
             rendered_raw_path: None,
+            normalization: Some(normalized.summary.clone()),
         };
         write_json(&metadata_path, &metadata)?;
 
@@ -312,6 +334,7 @@ fn fetch_one_page(
             etag,
             last_modified,
             byte_size,
+            normalization: Some(normalized.summary),
         });
     }
 
@@ -333,11 +356,13 @@ fn fetch_one_page(
             }
         }
 
-        write_bytes(&page_path, final_markdown.as_bytes())?;
-        let content_hash = sha256_hex(final_markdown.as_bytes());
+        let normalized = normalize_markdown(&final_markdown);
+        let byte_size = normalized.markdown.len() as u64;
+        write_bytes(&page_path, normalized.markdown.as_bytes())?;
+        let content_hash = sha256_hex(normalized.markdown.as_bytes());
         let change_status = compare_change(previous, &content_hash);
         let metadata = PageMetadata {
-            schema_version: 2,
+            schema_version: 3,
             fetched_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             snapshot_label: snapshot_label.to_string(),
@@ -360,6 +385,7 @@ fn fetch_one_page(
             page_path: page_path.clone(),
             raw_path: raw_path.clone(),
             rendered_raw_path: rendered_raw_output_path.clone(),
+            normalization: Some(normalized.summary.clone()),
         };
         write_json(&metadata_path, &metadata)?;
 
@@ -381,9 +407,11 @@ fn fetch_one_page(
             etag,
             last_modified,
             byte_size,
+            normalization: Some(normalized.summary),
         });
     }
 
+    let byte_size = body_vec.len() as u64;
     Ok(PageManifestEntry {
         page_key,
         url: requested_url.to_string(),
@@ -406,6 +434,7 @@ fn fetch_one_page(
         etag,
         last_modified,
         byte_size,
+        normalization: None,
     })
 }
 

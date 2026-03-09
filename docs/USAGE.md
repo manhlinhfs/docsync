@@ -142,6 +142,7 @@ docsync import supabase --ref master --all-pages
 ```
 
 Incremental snapshots import only `new` and `changed` pages by default.
+Duplicate normalized pages inside the same snapshot are skipped by default during import.
 
 ## Verify a snapshot with OmniMem search
 
@@ -159,4 +160,4 @@ docsync migrate --json
 
 ## Notes
 
-`v1.0.0` includes incremental diff-aware sync, headless browser fallback, runtime migration, shell completions, and release automation on top of the markdown-first, HTML fallback, git-native, and OmniMem flows added earlier.
+`v1.1.0` includes incremental diff-aware sync, markdown/MDX normalization before hashing or import, duplicate-content skipping during OmniMem import, headless browser fallback, runtime migration, shell completions, and release automation on top of the markdown-first, HTML fallback, git-native, and OmniMem flows added earlier.

@@ -46,7 +46,7 @@ Headless browser fallback mozhno nastroitsya cherez:
 
 ## Status
 
-Tekushchaya versiya: `1.0.0`
+Tekushchaya versiya: `1.1.0`
 
 Etot release fokusiruetsya na:
 
@@ -58,7 +58,8 @@ Etot release fokusiruetsya na:
 - HTML fallback conversion dlya saitov, kotorye ne otdayut markdown napryamuyu
 - incremental sync s snapshot lineage, diff summary, reused pages i removed page tracking
 - headless browser fallback dlya dynamic docs pages, kogda static HTML extraction slishkom tonkaya
-- komandy OmniMem import i verify s changed-only incremental import po umolchaniyu
+- markdown/MDX normalization, kotoryi ubiraet tipichnyi docs boilerplate i flattenit UI-heavy components do hash ili import
+- komandy OmniMem import i verify s changed-only incremental import po umolchaniyu i propuskom duplicate-content vnutri odnogo snapshot
 - migrate command dlya runtime schema i guarantee sovmestimosti config/manifest
 - shell completions, GitHub Actions CI/release automation i install scripts
 
@@ -164,6 +165,7 @@ Importiruet sokhranennyi snapshot v OmniMem i zapisivaet `omnimem-import.json` v
 
 Dlya incremental snapshot po umolchaniyu importiruyutsya tolko stranitsy `new` i `changed`.
 Ispolzuyte `--all-pages`, esli nuzhen polnyi re-import.
+Esli neskolko stranits posle normalization dayut odin i tot zhe content hash, `docsync import` po umolchaniyu importiruet tolko odnu kopiyu.
 
 ### `docsync verify <source> <query>`
 
@@ -179,12 +181,12 @@ Perepisyvaet staryi runtime config i snapshot manifests v tekushchuyu stable sch
 
 ### `docsync sync <source>`
 
-V `v1.0.0` komanda vypolnyaet discovery, a zatem incremental markdown-first HTTP fetch, HTML fallback, headless fallback ili git-native repo sync:
+V `v1.1.0` komanda vypolnyaet discovery, a zatem incremental markdown-first HTTP fetch, HTML fallback, headless fallback ili git-native repo sync:
 
 - snapshot directory
 - `discovery.json`
 - discovered URL frontier iz `llms.txt`, `llms-full.txt`, sitemap indexes, direct seed pages ili repo-native docs trees
-- markdown pages v `pages/`
+- normalized markdown pages v `pages/`
 - sidecar metadata dlya kazhdoi stranitsy v `pages/`
 - raw response bodies v `raw/`
 - `manifest.json`
@@ -193,6 +195,7 @@ V `v1.0.0` komanda vypolnyaet discovery, a zatem incremental markdown-first HTTP
 
 Dlya `git-docs` `docsync` kloniruet repo, resolveit zaproshennyi ref, detectit ili ispolzuet `docs_path`, snapshotit markdown files napryamuyu i zapisivaet nav manifests, takie kak `meta.json`, `docs.json` ili `mint.json`.
 Dlya HTML-only page seed `docsync` konvertiruet poluchennyi HTML v Markdown i sokhranyaet raw HTML body vmeste s normalized page.
+Dlya Markdown i MDX istochnikov `docsync` normalizuet tipichnye komponenty, takie kak callouts, tabs, steps, cards, duplicate headings i boilerplate v nachale stranitsy do hash, diff ili import.
 Esli sushchestvuet predydushchii snapshot, `docsync` takzhe zapisivaet `new`, `changed`, `unchanged` i `removed` v `manifest.json`, reuseit validator-backed pages i pokazyvaet diff counts v CLI output.
 
 ## Runtime layout

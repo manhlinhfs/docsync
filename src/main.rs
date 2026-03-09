@@ -8,6 +8,7 @@ mod incremental;
 mod migrate;
 mod models;
 mod network;
+mod normalize;
 mod omnimem;
 mod probe;
 mod sources;

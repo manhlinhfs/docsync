@@ -1,5 +1,21 @@
 # Changelog
 
+## `1.1.0` - 2026-03-09
+
+Added:
+
+- markdown/MDX normalization before snapshot hashing and OmniMem import
+- per-page normalization summaries in manifests and sidecar metadata
+- duplicate-content skipping during `docsync import`
+- targeted tests for MDX component flattening and duplicate-import protection
+
+Changed:
+
+- `pages/` now stores normalized markdown while `raw/` keeps the original fetched body
+- git-native docs sync now normalizes markdown files before diffing or import
+- fetch summaries now record normalization coverage and normalization-changed counts
+- `llms` discovery now ignores external and placeholder/example URLs from noisy full indexes
+
 ## `1.0.0` - 2026-03-09
 
 Added:

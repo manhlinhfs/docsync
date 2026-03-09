@@ -71,8 +71,8 @@ pub fn migrate_runtime(paths: &AppPaths) -> Result<MigrateResult> {
                     manifest.previous_snapshot_label.as_deref(),
                 ));
             }
-            if manifest.schema_version < 6 {
-                manifest.schema_version = 6;
+            if manifest.schema_version < 7 {
+                manifest.schema_version = 7;
             }
 
             if manifest.schema_version != original_schema || original_diff_missing {
@@ -165,6 +165,7 @@ mod tests {
                 etag: None,
                 last_modified: None,
                 byte_size: 10,
+                normalization: None,
             }],
             notes: Vec::new(),
         };
@@ -181,7 +182,7 @@ mod tests {
         let migrated: SnapshotManifest = serde_json::from_str(&fs::read_to_string(
             paths.snapshots_dir.join("demo/snap-1/manifest.json"),
         )?)?;
-        assert_eq!(migrated.schema_version, 6);
+        assert_eq!(migrated.schema_version, 7);
         assert_eq!(
             migrated.diff.expect("diff").import_candidates,
             1,

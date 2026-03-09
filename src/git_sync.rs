@@ -14,6 +14,7 @@ use crate::models::{
     PageManifestEntry, PageMetadata, SourceDefinition,
 };
 use crate::network::apply_proxy_to_git_command;
+use crate::normalize::normalize_markdown;
 use crate::probe::{DetectedInputKind, SuggestedMode};
 use crate::util::{ensure_directory, now_utc_rfc3339};
 
@@ -125,6 +126,8 @@ pub fn sync_git_source(
                 stored_pages: 0,
                 skipped_pages: 0,
                 reused_pages: 0,
+                normalized_pages: 0,
+                normalization_changed_pages: 0,
                 method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
             },
             Vec::new(),
@@ -196,6 +199,7 @@ fn snapshot_git_pages(
 
     let mut pages = Vec::new();
     let mut reused_pages = 0usize;
+    let mut normalization_changed_pages = 0usize;
     let mut seen_keys = std::collections::BTreeSet::new();
 
     for file_path in markdown_files {
@@ -203,12 +207,13 @@ fn snapshot_git_pages(
         seen_keys.insert(relative.clone());
         let page_path = pages_root.join(&relative);
         let raw_path = raw_root.join(&relative);
-        copy_file(file_path, &page_path)?;
         copy_file(file_path, &raw_path)?;
 
         let bytes = fs::read(file_path)
             .with_context(|| format!("failed to read source docs file {}", file_path.display()))?;
-        let sha256 = sha256_hex(&bytes);
+        let normalized = normalize_markdown(&String::from_utf8_lossy(&bytes));
+        write_bytes(&page_path, normalized.markdown.as_bytes())?;
+        let sha256 = sha256_hex(normalized.markdown.as_bytes());
         let change_status = match previous_pages.and_then(|pages| pages.get(&relative)) {
             None => PageChangeStatus::New,
             Some(previous) if previous.content_hash.as_deref() == Some(sha256.as_str()) => {
@@ -219,9 +224,12 @@ fn snapshot_git_pages(
         if change_status == PageChangeStatus::Unchanged {
             reused_pages += 1;
         }
+        if normalized.summary.changed {
+            normalization_changed_pages += 1;
+        }
         let metadata_path = metadata_path_for(&page_path);
         let metadata = PageMetadata {
-            schema_version: 2,
+            schema_version: 3,
             fetched_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             snapshot_label: snapshot_label.to_string(),
@@ -233,9 +241,9 @@ fn snapshot_git_pages(
             discovered_from: DiscoveryOrigin::SeedPage,
             content_type: Some(content_type_for(file_path)),
             status_code: 200,
-            byte_size: bytes.len() as u64,
+            byte_size: normalized.markdown.len() as u64,
             sha256: sha256.clone(),
-            raw_sha256: Some(sha256.clone()),
+            raw_sha256: Some(bytes_hash_for_raw(&bytes)),
             etag: None,
             last_modified: None,
             x_markdown_tokens: None,
@@ -244,6 +252,7 @@ fn snapshot_git_pages(
             page_path: page_path.clone(),
             raw_path: raw_path.clone(),
             rendered_raw_path: None,
+            normalization: Some(normalized.summary.clone()),
         };
         write_json(&metadata_path, &metadata)?;
 
@@ -266,7 +275,8 @@ fn snapshot_git_pages(
             raw_sha256: Some(bytes_hash_for_raw(&bytes)),
             etag: None,
             last_modified: None,
-            byte_size: bytes.len() as u64,
+            byte_size: normalized.markdown.len() as u64,
+            normalization: Some(normalized.summary),
         });
     }
 
@@ -292,6 +302,7 @@ fn snapshot_git_pages(
                     etag: None,
                     last_modified: None,
                     byte_size: 0,
+                    normalization: previous.normalization.clone(),
                 });
             }
         }
@@ -303,6 +314,8 @@ fn snapshot_git_pages(
             stored_pages: markdown_files.len(),
             skipped_pages: 0,
             reused_pages,
+            normalized_pages: markdown_files.len(),
+            normalization_changed_pages,
             method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
         },
         pages,
@@ -311,6 +324,13 @@ fn snapshot_git_pages(
 
 fn bytes_hash_for_raw(bytes: &[u8]) -> String {
     sha256_hex(bytes)
+}
+
+fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        ensure_directory(parent)?;
+    }
+    fs::write(path, bytes).with_context(|| format!("failed to write {}", path.display()))
 }
 
 fn detect_docs_root(repo_root: &Path, configured: Option<&str>) -> Result<PathBuf> {
@@ -678,6 +698,7 @@ mod tests {
                     content_type: Some("text/markdown".to_string()),
                     etag: None,
                     last_modified: None,
+                    normalization: None,
                 },
             ),
             (
@@ -694,6 +715,7 @@ mod tests {
                     content_type: Some("text/markdown".to_string()),
                     etag: None,
                     last_modified: None,
+                    normalization: None,
                 },
             ),
         ]);

@@ -46,7 +46,7 @@ Headless browser fallback can be configured through:
 
 ## Status
 
-Current version: `1.0.0`
+Current version: `1.1.0`
 
 This release focuses on:
 
@@ -58,7 +58,8 @@ This release focuses on:
 - HTML fallback conversion for website pages that do not expose markdown directly
 - incremental sync with snapshot lineage, diff summaries, reused pages, and removed page tracking
 - headless browser fallback for dynamic docs pages when static HTML extraction is too thin
-- OmniMem import and verification commands with per-snapshot logs and changed-only incremental import by default
+- markdown/MDX normalization that strips common docs boilerplate and flattens UI-heavy components before hashing or import
+- OmniMem import and verification commands with per-snapshot logs, changed-only incremental import by default, and duplicate-content skipping inside a snapshot
 - runtime migration command and stable schema compatibility guarantees
 - shell completion generation, GitHub Actions CI/release automation, and install scripts
 
@@ -164,6 +165,7 @@ Import a stored snapshot into OmniMem and write `omnimem-import.json` under that
 
 For incremental snapshots, `docsync import` imports only `new` and `changed` pages by default.
 Use `--all-pages` when you explicitly want a full re-import.
+When multiple pages normalize to the same content hash, `docsync import` imports only one copy by default.
 
 ### `docsync verify <source> <query>`
 
@@ -179,12 +181,12 @@ Rewrite old runtime config and snapshot manifests into the current stable schema
 
 ### `docsync sync <source>`
 
-`v1.0.0` performs discovery plus incremental markdown-first HTTP fetch, HTML fallback, headless fallback, or git-native repo sync:
+`v1.1.0` performs discovery plus incremental markdown-first HTTP fetch, HTML fallback, headless fallback, or git-native repo sync:
 
 - snapshot directory
 - `discovery.json`
 - discovered URL frontier from `llms.txt`, `llms-full.txt`, sitemap indexes, direct seed pages, or repo-native docs trees
-- markdown pages under `pages/`
+- normalized markdown pages under `pages/`
 - per-page metadata sidecars under `pages/`
 - raw response bodies under `raw/`
 - `pages/`
@@ -195,6 +197,7 @@ Rewrite old runtime config and snapshot manifests into the current stable schema
 
 For `git-docs` sources, `docsync` clones the repo, resolves the requested ref, detects or uses `docs_path`, snapshots markdown files directly, and records nav manifests such as `meta.json`, `docs.json`, or `mint.json`.
 For HTML-only page seeds, `docsync` converts the fetched HTML into Markdown and stores the raw HTML body alongside the normalized page.
+For Markdown and MDX sources, `docsync` normalizes common docs components like callouts, tabs, steps, cards, duplicate headings, and top-of-page boilerplate before hashing, diffing, or import.
 When a previous snapshot exists, `docsync` also records `new`, `changed`, `unchanged`, and `removed` page state in `manifest.json`, reuses validator-backed pages, and reports diff counts in CLI output.
 
 ## Runtime layout

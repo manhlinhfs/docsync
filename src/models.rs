@@ -8,6 +8,7 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppPaths;
+use crate::normalize::NormalizationSummary;
 use crate::probe::{DetectedInputKind, SuggestedMode};
 use crate::util::now_utc_rfc3339;
 
@@ -162,6 +163,10 @@ pub struct FetchSummary {
     pub skipped_pages: usize,
     #[serde(default)]
     pub reused_pages: usize,
+    #[serde(default)]
+    pub normalized_pages: usize,
+    #[serde(default)]
+    pub normalization_changed_pages: usize,
     pub method_counts: BTreeMap<String, usize>,
 }
 
@@ -213,6 +218,8 @@ pub struct PageManifestEntry {
     #[serde(default)]
     pub last_modified: Option<String>,
     pub byte_size: u64,
+    #[serde(default)]
+    pub normalization: Option<NormalizationSummary>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Eq, PartialEq)]
@@ -301,4 +308,6 @@ pub struct PageMetadata {
     pub raw_path: PathBuf,
     #[serde(default)]
     pub rendered_raw_path: Option<PathBuf>,
+    #[serde(default)]
+    pub normalization: Option<NormalizationSummary>,
 }

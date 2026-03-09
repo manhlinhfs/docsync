@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,6 +20,7 @@ pub struct ImportResult {
     pub imported_pages: usize,
     pub failed_pages: usize,
     pub skipped_unchanged_pages: usize,
+    pub skipped_duplicate_pages: usize,
     pub summary_path: PathBuf,
     pub omnimem_cmd: String,
     pub dry_run: bool,
@@ -47,6 +49,7 @@ struct OmniMemImportSummary {
     imported_pages: usize,
     failed_pages: usize,
     skipped_unchanged_pages: usize,
+    skipped_duplicate_pages: usize,
     items: Vec<OmniMemImportItem>,
 }
 
@@ -94,16 +97,13 @@ pub fn import_snapshot(
     let summary_path = snapshot_dir.join("omnimem-import.json");
     let started_at = now_utc_rfc3339();
 
-    let importable_pages = manifest
+    let importable_pages_from_manifest = manifest
         .pages
         .iter()
         .filter(|page| {
             should_import_page(page, all_pages, manifest.previous_snapshot_label.is_some())
         })
-        .filter_map(|page| page.page_path.as_ref())
-        .cloned()
         .collect::<Vec<_>>();
-    let selected_pages = importable_pages.len();
     let skipped_unchanged_pages = manifest
         .pages
         .iter()
@@ -113,8 +113,32 @@ pub fn import_snapshot(
                 && page.change_status == PageChangeStatus::Unchanged
         })
         .count();
-
+    let mut selected_pages = 0usize;
+    let mut skipped_duplicate_pages = 0usize;
+    let mut importable_pages = Vec::new();
+    let mut seen_hashes = BTreeSet::new();
     let mut items = Vec::new();
+
+    for page in importable_pages_from_manifest {
+        let Some(page_path) = page.page_path.clone() else {
+            continue;
+        };
+        if let Some(hash) = page.sha256.as_deref() {
+            if !seen_hashes.insert(hash.to_string()) {
+                skipped_duplicate_pages += 1;
+                items.push(OmniMemImportItem {
+                    page_path: page_path.display().to_string(),
+                    status: "skipped_duplicate".to_string(),
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                });
+                continue;
+            }
+        }
+        selected_pages += 1;
+        importable_pages.push(page_path);
+    }
     let mut imported_pages = 0usize;
     let mut failed_pages = 0usize;
 
@@ -168,6 +192,7 @@ pub fn import_snapshot(
         imported_pages,
         failed_pages,
         skipped_unchanged_pages,
+        skipped_duplicate_pages,
         items,
     };
     write_json(&summary_path, &summary)?;
@@ -179,6 +204,7 @@ pub fn import_snapshot(
         imported_pages,
         failed_pages,
         skipped_unchanged_pages,
+        skipped_duplicate_pages,
         summary_path,
         omnimem_cmd,
         dry_run,
@@ -397,7 +423,7 @@ mod tests {
         fs::write(&unchanged_page, "# Same\n")?;
 
         let manifest = SnapshotManifest {
-            schema_version: 6,
+            schema_version: 7,
             created_at: "2026-03-09T00:00:00Z".to_string(),
             source_name: "demo".to_string(),
             entry_url: "https://example.com".to_string(),
@@ -453,6 +479,77 @@ mod tests {
     }
 
     #[test]
+    fn skips_duplicate_hash_pages_within_snapshot() -> Result<()> {
+        let root = make_temp_dir("omnimem-import-dedup");
+        let paths = make_app_paths(&root);
+        let snapshot_dir = create_snapshot_fixture(&paths, "demo", "snap-3")?;
+        let first_page = snapshot_dir.join("pages/first.md");
+        let second_page = snapshot_dir.join("pages/second.md");
+        fs::create_dir_all(first_page.parent().expect("page parent"))?;
+        fs::write(&first_page, "# Same\n")?;
+        fs::write(&second_page, "# Same\n")?;
+
+        let mut first_entry = page_entry(&first_page, crate::models::PageChangeStatus::New);
+        let mut second_entry = page_entry(&second_page, crate::models::PageChangeStatus::New);
+        first_entry.sha256 = Some("dup-hash".to_string());
+        second_entry.sha256 = Some("dup-hash".to_string());
+
+        let manifest = SnapshotManifest {
+            schema_version: 7,
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            source_name: "demo".to_string(),
+            entry_url: "https://example.com".to_string(),
+            source_kind: SourceKind::Website,
+            version_strategy: VersionStrategy::DateSnapshot,
+            source_ref: "snap-3".to_string(),
+            snapshot_label: "snap-3".to_string(),
+            snapshot_dir: snapshot_dir.clone(),
+            status: "fetched".to_string(),
+            previous_snapshot_label: None,
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            discovery: DiscoverySummary {
+                manifest_path: snapshot_dir.join("discovery.json"),
+                adapters: vec!["seed_page".to_string()],
+                frontier_count: 2,
+                llms_index_url: None,
+                llms_full_index_url: None,
+                sitemap_count: 0,
+            },
+            git: None,
+            fetch: None,
+            diff: None,
+            pages: vec![first_entry, second_entry],
+            notes: Vec::new(),
+        };
+        fs::write(
+            snapshot_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)?,
+        )?;
+
+        let fake = fake_omnimem_script(&root, "import-ok")?;
+        let result = import_snapshot(
+            &paths,
+            "demo",
+            Some("snap-3".to_string()),
+            Some(fake.to_string_lossy().to_string()),
+            false,
+            false,
+            false,
+        )?;
+
+        assert_eq!(result.selected_pages, 1);
+        assert_eq!(result.skipped_duplicate_pages, 1);
+        let log = fs::read_to_string(root.join("omnimem-invocations.log"))?;
+        assert!(
+            (log.contains("first.md") && !log.contains("second.md"))
+                || (!log.contains("first.md") && log.contains("second.md"))
+        );
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn verifies_snapshot_with_fake_omnimem() -> Result<()> {
         let root = make_temp_dir("omnimem-verify");
         let paths = make_app_paths(&root);
@@ -489,7 +586,7 @@ mod tests {
 
     fn write_manifest(snapshot_dir: &Path, page_paths: Vec<PathBuf>) -> Result<()> {
         let manifest = SnapshotManifest {
-            schema_version: 6,
+            schema_version: 7,
             created_at: "2026-03-09T00:00:00Z".to_string(),
             source_name: "demo".to_string(),
             entry_url: "https://example.com".to_string(),
@@ -533,6 +630,7 @@ mod tests {
                     etag: None,
                     last_modified: None,
                     byte_size: 8,
+                    normalization: None,
                 })
                 .collect(),
             notes: Vec::new(),
@@ -566,6 +664,7 @@ mod tests {
             etag: None,
             last_modified: None,
             byte_size: 8,
+            normalization: None,
         }
     }
 

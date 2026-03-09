@@ -276,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "docsync"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -284,6 +284,7 @@ dependencies = [
  "clap_complete",
  "html2md",
  "quick-xml",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

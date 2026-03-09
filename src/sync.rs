@@ -160,7 +160,7 @@ fn sync_http_mode(
         diff = diff_summary_from_pages(&fetch_outcome.pages, previous_snapshot_label);
 
         let manifest = SnapshotManifest {
-            schema_version: 6,
+            schema_version: 7,
             created_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             entry_url: source.entry_url.clone(),
@@ -276,7 +276,7 @@ fn sync_git_mode(
         })?;
 
         let manifest = SnapshotManifest {
-            schema_version: 6,
+            schema_version: 7,
             created_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             entry_url: source.entry_url.clone(),
