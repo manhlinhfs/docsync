@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-03-07T00:00:00+00:00",
+  "updated_at": "2026-03-07T00:00:00+00:00",
+  "default_proxy_url": "http://127.0.0.1:7890",
+  "sources": {
+    "postiz": {
+      "name": "postiz",
+      "entry_url": "https://docs.postiz.com/",
+      "proxy_url": null,
+      "source_kind": "website",
+      "repo_url": null,
+      "docs_path": null,
+      "default_ref": "snapshot-20260307",
+      "version_strategy": "date_snapshot",
+      "tags": [
+        "docs",
+        "mintlify"
+      ],
+      "created_at": "2026-03-07T00:00:00+00:00",
+      "updated_at": "2026-03-07T00:00:00+00:00"
+    }
+  }
+}

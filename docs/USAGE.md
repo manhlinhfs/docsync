@@ -1,0 +1,127 @@
+# Usage
+
+## Initialize local state
+
+```bash
+docsync init
+```
+
+## Inspect runtime paths
+
+```bash
+docsync paths
+docsync paths --json
+```
+
+## Use a proxy for blocked sites
+
+```bash
+docsync --proxy http://127.0.0.1:7890 probe https://docs.example.com
+docsync --proxy socks5h://user:pass@127.0.0.1:1080 probe https://docs.example.com
+docsync source add blocked-site \
+  --url https://docs.example.com \
+  --proxy http://127.0.0.1:7890 \
+  --kind website \
+  --version-strategy date-snapshot
+```
+
+## Add a website docs source
+
+```bash
+docsync source add postiz \
+  --url https://docs.postiz.com \
+  --kind website \
+  --version-strategy date-snapshot \
+  --tag mintlify \
+  --tag docs
+```
+
+## Add a source from a non-homepage discovery link
+
+```bash
+docsync source add postiz-llms \
+  --url https://docs.postiz.com/llms.txt \
+  --kind website \
+  --version-strategy date-snapshot
+```
+
+## Probe a sitemap or llms index
+
+```bash
+docsync probe https://docs.postiz.com/llms.txt --json
+docsync probe https://docs.postiz.com/sitemap.xml --json
+```
+
+## Add a git-native docs source
+
+```bash
+docsync source add supabase \
+  --url https://supabase.com/docs \
+  --kind git-docs \
+  --repo https://github.com/supabase/supabase \
+  --docs-path apps/docs/content \
+  --default-ref master \
+  --version-strategy git-ref
+```
+
+## Probe a docs page
+
+```bash
+docsync probe https://docs.postiz.com/introduction
+docsync probe https://blog.cloudflare.com/markdown-for-agents/ --json
+```
+
+## Add a single page seed
+
+```bash
+docsync source add postiz-page \
+  --url https://docs.postiz.com/introduction \
+  --kind website \
+  --version-strategy date-snapshot
+```
+
+## Probe a direct import asset
+
+```bash
+docsync probe https://example.com/openapi.json --json
+docsync probe https://example.com/reference.pdf --json
+```
+
+## List sources
+
+```bash
+docsync source list
+```
+
+## Show one source
+
+```bash
+docsync source show postiz
+```
+
+## Build a fetched snapshot
+
+```bash
+docsync sync postiz --ref snapshot-20260307
+docsync sync postiz-llms --dry-run --json
+docsync sync postiz-page
+docsync sync supabase --ref master
+```
+
+## Import a snapshot into OmniMem
+
+```bash
+docsync import postiz-page --ref snapshot-20260309
+docsync import supabase --ref master --dry-run --json
+```
+
+## Verify a snapshot with OmniMem search
+
+```bash
+docsync verify postiz-page "release notes" --ref snapshot-20260309
+docsync verify supabase "auth" --ref master --json
+```
+
+## Notes
+
+`v0.6.0` keeps the markdown-first HTTP flow, adds HTML fallback conversion for page seeds, adds git-native sync for `git-docs` sources, and adds OmniMem import/verify helpers with per-snapshot log files.
