@@ -1,5 +1,18 @@
 # Changelog
 
+## `1.3.4` - 2026-03-09
+
+Added:
+
+- `docsync sync --import` to run OmniMem import immediately after a successful sync
+- source-level auto-import policy via `docsync source add --auto-import` and `docsync source auto-import --enable`
+- source-level OmniMem defaults for command path, direct mode, and low-signal import inclusion
+- tests covering both source-driven auto-import and one-shot `sync --import` workflows
+
+Changed:
+
+- `sync` JSON output now embeds an `import` summary when OmniMem import runs automatically after sync
+
 ## `1.3.3` - 2026-03-09
 
 Changed:

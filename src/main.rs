@@ -35,7 +35,7 @@ use crate::dashboard::{
 use crate::migrate::migrate_runtime;
 use crate::models::NewSource;
 use crate::omnimem::{import_snapshot, verify_snapshot};
-use crate::sources::{add_source, get_source, list_sources};
+use crate::sources::{add_source, configure_source_auto_import, get_source, list_sources};
 use crate::sync::sync_source;
 use crate::telegram::send_telegram_snapshot_summary;
 
@@ -327,6 +327,10 @@ fn run() -> Result<()> {
                         entry_url: args.url,
                         proxy_url: args.proxy,
                         browser_cmd: args.browser_cmd,
+                        auto_import: args.auto_import,
+                        omnimem_cmd: args.omnimem_cmd,
+                        omnimem_direct: args.omnimem_direct,
+                        omnimem_include_low_signal: args.omnimem_include_low_signal,
                         source_kind: args.kind,
                         repo_url: args.repo,
                         docs_path: args.docs_path,
@@ -348,12 +352,55 @@ fn run() -> Result<()> {
                         if let Some(browser_cmd) = source.browser_cmd.as_deref() {
                             println!("Browser command: {browser_cmd}");
                         }
+                        println!("Auto import: {}", source.auto_import);
+                        if let Some(omnimem_cmd) = source.omnimem_cmd.as_deref() {
+                            println!("OmniMem command: {omnimem_cmd}");
+                        }
+                        if source.omnimem_direct {
+                            println!("OmniMem direct mode: true");
+                        }
+                        if source.omnimem_include_low_signal {
+                            println!("OmniMem include low signal: true");
+                        }
                         if let Some(repo_url) = source.repo_url.as_deref() {
                             println!("Repo: {repo_url}");
                         }
                         if let Some(docs_path) = source.docs_path.as_deref() {
                             println!("Docs path: {docs_path}");
                         }
+                    }
+                }
+                SourceCommands::AutoImport(args) => {
+                    let mut config = load_config(&paths)?;
+                    let enabled = if args.enable {
+                        true
+                    } else if args.disable {
+                        false
+                    } else {
+                        anyhow::bail!("choose one of --enable or --disable");
+                    };
+                    let source = configure_source_auto_import(
+                        &mut config,
+                        &paths,
+                        &args.name,
+                        enabled,
+                        args.omnimem_cmd,
+                        args.omnimem_direct,
+                        args.omnimem_include_low_signal,
+                    )?;
+                    if args.json {
+                        print_json(&source)?;
+                    } else {
+                        println!("Name: {}", source.name);
+                        println!("Auto import: {}", source.auto_import);
+                        if let Some(omnimem_cmd) = source.omnimem_cmd.as_deref() {
+                            println!("OmniMem command: {omnimem_cmd}");
+                        }
+                        println!("OmniMem direct mode: {}", source.omnimem_direct);
+                        println!(
+                            "OmniMem include low signal: {}",
+                            source.omnimem_include_low_signal
+                        );
                     }
                 }
                 SourceCommands::List(args) => {
@@ -389,6 +436,15 @@ fn run() -> Result<()> {
                         if let Some(browser_cmd) = source.browser_cmd.as_deref() {
                             println!("Browser command: {browser_cmd}");
                         }
+                        println!("Auto import: {}", source.auto_import);
+                        if let Some(omnimem_cmd) = source.omnimem_cmd.as_deref() {
+                            println!("OmniMem command: {omnimem_cmd}");
+                        }
+                        println!("OmniMem direct mode: {}", source.omnimem_direct);
+                        println!(
+                            "OmniMem include low signal: {}",
+                            source.omnimem_include_low_signal
+                        );
                         if let Some(repo) = source.repo_url.as_deref() {
                             println!("Repo URL: {repo}");
                         }
@@ -408,6 +464,9 @@ fn run() -> Result<()> {
         }
         Commands::Sync(args) => {
             ensure_layout(&paths)?;
+            if args.dry_run && args.import {
+                anyhow::bail!("--import cannot be used with --dry-run");
+            }
             let config = load_config(&paths)?;
             let result = sync_source(
                 &config,
@@ -417,6 +476,10 @@ fn run() -> Result<()> {
                 args.dry_run,
                 cli.proxy.as_deref(),
                 cli.browser_cmd.as_deref(),
+                args.import,
+                args.omnimem_cmd,
+                args.omnimem_direct,
+                args.omnimem_include_low_signal,
             )?;
             if args.json {
                 print_json(&result)?;
@@ -444,6 +507,14 @@ fn run() -> Result<()> {
                 println!("Manifest: {}", result.manifest_path.display());
                 if !args.dry_run {
                     println!("Snapshot discovery metadata written.");
+                }
+                if let Some(import_result) = result.import.as_ref() {
+                    println!("Auto import: true");
+                    println!("Imported pages: {}", import_result.imported_pages);
+                    println!("Failed imports: {}", import_result.failed_pages);
+                    println!("OmniMem summary: {}", import_result.summary_path.display());
+                } else {
+                    println!("Auto import: false");
                 }
             }
         }

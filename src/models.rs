@@ -29,7 +29,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         let now = now_utc_rfc3339();
         Self {
-            schema_version: 2,
+            schema_version: 3,
             created_at: now.clone(),
             updated_at: now,
             default_proxy_url: None,
@@ -56,6 +56,14 @@ pub struct SourceDefinition {
     pub proxy_url: Option<String>,
     #[serde(default)]
     pub browser_cmd: Option<String>,
+    #[serde(default)]
+    pub auto_import: bool,
+    #[serde(default)]
+    pub omnimem_cmd: Option<String>,
+    #[serde(default)]
+    pub omnimem_direct: bool,
+    #[serde(default)]
+    pub omnimem_include_low_signal: bool,
     pub source_kind: SourceKind,
     pub repo_url: Option<String>,
     pub docs_path: Option<String>,
@@ -72,6 +80,10 @@ pub struct NewSource {
     pub entry_url: String,
     pub proxy_url: Option<String>,
     pub browser_cmd: Option<String>,
+    pub auto_import: bool,
+    pub omnimem_cmd: Option<String>,
+    pub omnimem_direct: bool,
+    pub omnimem_include_low_signal: bool,
     pub source_kind: SourceKind,
     pub repo_url: Option<String>,
     pub docs_path: Option<String>,

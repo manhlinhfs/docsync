@@ -126,6 +126,7 @@ docsync sync postiz --ref snapshot-20260307
 docsync sync postiz-llms --dry-run --json
 docsync sync postiz-page
 docsync sync supabase --ref master
+docsync sync openclaw --import
 ```
 
 When a previous snapshot exists, `docsync sync` reports:
@@ -147,6 +148,27 @@ docsync import supabase --ref master --include-low-signal
 Incremental snapshots import only `new` and `changed` pages by default.
 Duplicate normalized pages inside the same snapshot are skipped by default during import.
 Low-signal pages are also skipped by default unless you pass `--include-low-signal`.
+
+## Enable automatic OmniMem import after sync
+
+```bash
+docsync source add drizzle \
+  --url https://orm.drizzle.team/docs/overview \
+  --kind website \
+  --version-strategy date-snapshot \
+  --auto-import
+
+docsync source auto-import drizzle --enable --omnimem-direct
+docsync source auto-import drizzle --disable
+```
+
+You can also trigger automation one time without changing source config:
+
+```bash
+docsync sync drizzle --import
+docsync sync drizzle --import --omnimem-direct
+docsync sync drizzle --import --omnimem-cmd /root/omnimem/omnimem
+```
 
 ## Build a local dashboard
 
@@ -191,4 +213,4 @@ docsync migrate --json
 
 ## Notes
 
-`v1.3.2` keeps the `v1.3.x` quality scoring, low-signal filtering, local dashboard, Telegram summary, and dashboard server lifecycle features, and adds a true global dashboard through `docsync dashboard --all`.
+`v1.3.4` keeps the `v1.3.x` quality scoring, low-signal filtering, local dashboard, Telegram summary, and global dashboard features, and adds source-level or one-shot automatic OmniMem import after sync.

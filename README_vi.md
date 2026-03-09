@@ -24,9 +24,9 @@ Phù hợp nhất với:
 - **Docs render bằng JS** với headless fallback
 - **Docs lấy từ repo Git**
 
-Phiên bản stable hiện tại: **`1.3.3`**
+Phiên bản stable hiện tại: **`1.3.4`**
 
-Các mốc phát triển tiếp theo sau `v1.3.3`: xem [ROADMAP.md](ROADMAP.md).
+Các mốc phát triển tiếp theo sau `v1.3.4`: xem [ROADMAP.md](ROADMAP.md).
 
 ## **Bắt Đầu Nhanh**
 
@@ -76,6 +76,12 @@ docsync sync openclaw --json
 docsync import openclaw
 ```
 
+Hoặc sync và import trong một lệnh:
+
+```bash
+docsync sync openclaw --import
+```
+
 ## **Ví Dụ Thực Tế**
 
 ### **OpenClaw: sync toàn bộ docs website**
@@ -88,6 +94,16 @@ docsync source add openclaw \
 
 docsync sync openclaw
 docsync import openclaw --dry-run --json
+```
+
+Nếu muốn mỗi lần sync đều tự đồng bộ vào OmniMem:
+
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot \
+  --auto-import
 ```
 
 Rất phù hợp khi site có:
@@ -137,6 +153,23 @@ docsync sync openclaw-getting-started
 Phù hợp khi bạn chỉ muốn nhập một page, không cần crawl cả site.
 
 Nếu URL trang nhìn rõ là docs, ví dụ `/docs/...`, `/guides/...`, hoặc `/start/...`, và cùng host đó có `llms.txt` hoặc sitemap, `docsync` có thể tự nâng page seed này thành full discovery của cả bộ docs.
+
+## **Tự Động Đồng Bộ OmniMem**
+
+Dùng một lần cho từng lượt sync:
+
+```bash
+docsync sync drizzle --import
+```
+
+Hoặc bật hẳn trên source:
+
+```bash
+docsync source auto-import drizzle --enable
+docsync source auto-import drizzle --enable --omnimem-direct
+```
+
+Sau đó chỉ cần chạy `docsync sync drizzle` là tool sẽ fetch docs rồi import snapshot vào OmniMem ngay.
 
 ## **Cách Nghĩ Về `docsync`**
 

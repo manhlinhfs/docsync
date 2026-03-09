@@ -14,6 +14,7 @@ use crate::models::{
     AppConfig, DiffSummary, PageChangeStatus, SnapshotManifest, SourceDefinition, SourceKind,
 };
 use crate::network::resolve_proxy_url;
+use crate::omnimem::{ImportResult, import_snapshot};
 use crate::util::{ensure_directory, now_utc_rfc3339, sanitize_ref_label};
 
 #[derive(Debug, Serialize)]
@@ -34,6 +35,8 @@ pub struct SyncResult {
     pub unchanged_pages: usize,
     pub removed_pages: usize,
     pub strategy_summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub import: Option<ImportResult>,
 }
 
 pub fn sync_source(
@@ -44,6 +47,10 @@ pub fn sync_source(
     dry_run: bool,
     cli_proxy: Option<&str>,
     cli_browser_cmd: Option<&str>,
+    import_after_sync: bool,
+    cli_omnimem_cmd: Option<String>,
+    cli_omnimem_direct: bool,
+    cli_omnimem_include_low_signal: bool,
 ) -> Result<SyncResult> {
     let source = config
         .sources
@@ -79,6 +86,11 @@ pub fn sync_source(
             previous_page_index.as_ref(),
             dry_run,
             proxy_url.as_deref(),
+            paths,
+            import_after_sync,
+            cli_omnimem_cmd,
+            cli_omnimem_direct,
+            cli_omnimem_include_low_signal,
         ),
         _ => sync_http_mode(
             source,
@@ -94,6 +106,11 @@ pub fn sync_source(
             dry_run,
             proxy_url.as_deref(),
             browser_cmd.as_deref(),
+            paths,
+            import_after_sync,
+            cli_omnimem_cmd,
+            cli_omnimem_direct,
+            cli_omnimem_include_low_signal,
         ),
     }
 }
@@ -112,6 +129,11 @@ fn sync_http_mode(
     dry_run: bool,
     proxy_url: Option<&str>,
     browser_cmd: Option<&str>,
+    paths: &AppPaths,
+    import_after_sync: bool,
+    cli_omnimem_cmd: Option<String>,
+    cli_omnimem_direct: bool,
+    cli_omnimem_include_low_signal: bool,
 ) -> Result<SyncResult> {
     let discovery = discover_source(&source.entry_url, &source.name, raw_label, proxy_url)?;
     let discovery_summary = discovery.summary(discovery_manifest_path.clone());
@@ -130,6 +152,7 @@ fn sync_http_mode(
     let mut skipped_pages = 0usize;
     let mut reused_pages = 0usize;
     let mut diff = diff_summary_from_pages(&[], previous_snapshot_label);
+    let mut import = None;
 
     if !dry_run {
         ensure_directory(snapshot_dir)?;
@@ -205,6 +228,16 @@ fn sync_http_mode(
         let body = serde_json::to_string_pretty(&manifest)?;
         fs::write(manifest_path, body)
             .with_context(|| format!("failed to write {}", manifest_path.display()))?;
+
+        import = maybe_auto_import(
+            paths,
+            source,
+            snapshot_label,
+            import_after_sync,
+            cli_omnimem_cmd,
+            cli_omnimem_direct,
+            cli_omnimem_include_low_signal,
+        )?;
     }
 
     Ok(SyncResult {
@@ -224,6 +257,7 @@ fn sync_http_mode(
         unchanged_pages: diff.unchanged_pages,
         removed_pages: diff.removed_pages,
         strategy_summary,
+        import,
     })
 }
 
@@ -240,6 +274,11 @@ fn sync_git_mode(
     >,
     dry_run: bool,
     proxy_url: Option<&str>,
+    paths: &AppPaths,
+    import_after_sync: bool,
+    cli_omnimem_cmd: Option<String>,
+    cli_omnimem_direct: bool,
+    cli_omnimem_include_low_signal: bool,
 ) -> Result<SyncResult> {
     if !dry_run {
         ensure_directory(snapshot_dir)?;
@@ -311,6 +350,20 @@ fn sync_git_mode(
             .with_context(|| format!("failed to write {}", manifest_path.display()))?;
     }
 
+    let import = if dry_run {
+        None
+    } else {
+        maybe_auto_import(
+            paths,
+            source,
+            snapshot_label,
+            import_after_sync,
+            cli_omnimem_cmd,
+            cli_omnimem_direct,
+            cli_omnimem_include_low_signal,
+        )?
+    };
+
     Ok(SyncResult {
         source_name: source.name.clone(),
         entry_url: source.entry_url.clone(),
@@ -340,7 +393,38 @@ fn sync_git_mode(
         unchanged_pages: diff.unchanged_pages,
         removed_pages: diff.removed_pages,
         strategy_summary,
+        import,
     })
+}
+
+fn maybe_auto_import(
+    paths: &AppPaths,
+    source: &SourceDefinition,
+    snapshot_label: &str,
+    import_after_sync: bool,
+    cli_omnimem_cmd: Option<String>,
+    cli_omnimem_direct: bool,
+    cli_omnimem_include_low_signal: bool,
+) -> Result<Option<ImportResult>> {
+    if !import_after_sync && !source.auto_import {
+        return Ok(None);
+    }
+
+    let omnimem_cmd = cli_omnimem_cmd.or_else(|| source.omnimem_cmd.clone());
+    let omnimem_direct = cli_omnimem_direct || source.omnimem_direct;
+    let include_low_signal = cli_omnimem_include_low_signal || source.omnimem_include_low_signal;
+
+    let result = import_snapshot(
+        paths,
+        &source.name,
+        Some(snapshot_label.to_string()),
+        omnimem_cmd,
+        omnimem_direct,
+        false,
+        false,
+        include_low_signal,
+    )?;
+    Ok(Some(result))
 }
 
 fn diff_summary_from_pages(
@@ -369,5 +453,181 @@ fn diff_summary_from_pages(
         unchanged_pages,
         removed_pages,
         import_candidates: new_pages + changed_pages,
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use anyhow::Result;
+
+    use super::maybe_auto_import;
+    use crate::config::AppPaths;
+    use crate::models::{
+        DiscoverySummary, SnapshotManifest, SourceDefinition, SourceKind, VersionStrategy,
+    };
+    use crate::probe::{DetectedInputKind, SuggestedMode};
+
+    #[test]
+    fn auto_import_runs_when_enabled_on_source() -> Result<()> {
+        let root = temp_dir("sync-auto-import-source");
+        let paths = make_paths(&root);
+        create_snapshot_fixture(&paths, "demo", "snap-1")?;
+        let fake = fake_omnimem_script(&root)?;
+        let source = source_definition(true, Some(fake.to_string_lossy().to_string()), false);
+
+        let result = maybe_auto_import(&paths, &source, "snap-1", false, None, false, false)?;
+
+        let result = result.expect("auto import result");
+        assert_eq!(result.imported_pages, 1);
+        let log = fs::read_to_string(root.join("omnimem-invocations.log"))?;
+        assert!(log.contains("import"));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_sync_import_overrides_source_policy() -> Result<()> {
+        let root = temp_dir("sync-auto-import-cli");
+        let paths = make_paths(&root);
+        create_snapshot_fixture(&paths, "demo", "snap-1")?;
+        let fake = fake_omnimem_script(&root)?;
+        let source = source_definition(false, Some(fake.to_string_lossy().to_string()), true);
+
+        let result = maybe_auto_import(&paths, &source, "snap-1", true, None, false, false)?;
+
+        let result = result.expect("explicit import result");
+        assert_eq!(result.imported_pages, 1);
+        let log = fs::read_to_string(root.join("omnimem-invocations.log"))?;
+        assert!(log.contains("--direct"));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn create_snapshot_fixture(
+        paths: &AppPaths,
+        source_name: &str,
+        snapshot_label: &str,
+    ) -> Result<PathBuf> {
+        let snapshot_dir = paths.snapshots_dir.join(source_name).join(snapshot_label);
+        fs::create_dir_all(snapshot_dir.join("pages"))?;
+        let page_path = snapshot_dir.join("pages/intro.md");
+        fs::write(&page_path, "# Intro\n")?;
+
+        let manifest = SnapshotManifest {
+            schema_version: 7,
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            source_name: source_name.to_string(),
+            entry_url: "https://docs.example.com".to_string(),
+            source_kind: SourceKind::Website,
+            version_strategy: VersionStrategy::DateSnapshot,
+            source_ref: snapshot_label.to_string(),
+            snapshot_label: snapshot_label.to_string(),
+            snapshot_dir: snapshot_dir.clone(),
+            status: "fetched".to_string(),
+            previous_snapshot_label: None,
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            discovery: DiscoverySummary {
+                manifest_path: snapshot_dir.join("discovery.json"),
+                adapters: vec!["seed_page".to_string()],
+                frontier_count: 1,
+                llms_index_url: None,
+                llms_full_index_url: None,
+                sitemap_count: 0,
+            },
+            git: None,
+            fetch: None,
+            diff: None,
+            pages: vec![crate::models::PageManifestEntry {
+                page_key: "https://docs.example.com/intro".to_string(),
+                url: "https://docs.example.com/intro".to_string(),
+                final_url: "https://docs.example.com/intro".to_string(),
+                fetch_method: "markdown_negotiation".to_string(),
+                status: "stored".to_string(),
+                change_status: crate::models::PageChangeStatus::New,
+                reused_from_snapshot: None,
+                page_path: Some(page_path.clone()),
+                metadata_path: None,
+                raw_path: Some(page_path),
+                rendered_raw_path: None,
+                content_type: Some("text/markdown".to_string()),
+                sha256: None,
+                raw_sha256: None,
+                etag: None,
+                last_modified: None,
+                byte_size: 8,
+                normalization: None,
+                quality: None,
+            }],
+            notes: Vec::new(),
+        };
+        fs::write(
+            snapshot_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)?,
+        )?;
+        Ok(snapshot_dir)
+    }
+
+    fn source_definition(
+        auto_import: bool,
+        omnimem_cmd: Option<String>,
+        omnimem_direct: bool,
+    ) -> SourceDefinition {
+        SourceDefinition {
+            name: "demo".to_string(),
+            entry_url: "https://docs.example.com".to_string(),
+            proxy_url: None,
+            browser_cmd: None,
+            auto_import,
+            omnimem_cmd,
+            omnimem_direct,
+            omnimem_include_low_signal: false,
+            source_kind: SourceKind::Website,
+            repo_url: None,
+            docs_path: None,
+            default_ref: None,
+            version_strategy: VersionStrategy::DateSnapshot,
+            tags: Vec::new(),
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            updated_at: "2026-03-09T00:00:00Z".to_string(),
+        }
+    }
+
+    fn fake_omnimem_script(root: &Path) -> Result<PathBuf> {
+        let script = root.join("fake-omnimem.sh");
+        let log = root.join("omnimem-invocations.log");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{}\"\nexit 0\n",
+                log.display()
+            ),
+        )?;
+        let mut perms = fs::metadata(&script)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script, perms)?;
+        Ok(script)
+    }
+
+    fn make_paths(root: &Path) -> AppPaths {
+        AppPaths {
+            home: root.to_path_buf(),
+            config_file: root.join("config.json"),
+            sources_dir: root.join("sources"),
+            snapshots_dir: root.join("snapshots"),
+        }
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("docsync-{prefix}-{stamp}"))
     }
 }

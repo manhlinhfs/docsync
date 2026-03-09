@@ -162,6 +162,7 @@ pub struct MigrateArgs {
 #[derive(Debug, Subcommand)]
 pub enum SourceCommands {
     Add(SourceAddArgs),
+    AutoImport(SourceAutoImportArgs),
     List(SourceListArgs),
     Show(SourceShowArgs),
 }
@@ -201,6 +202,18 @@ pub struct SourceAddArgs {
     #[arg(long)]
     pub browser_cmd: Option<String>,
 
+    #[arg(long)]
+    pub auto_import: bool,
+
+    #[arg(long)]
+    pub omnimem_cmd: Option<String>,
+
+    #[arg(long)]
+    pub omnimem_direct: bool,
+
+    #[arg(long)]
+    pub omnimem_include_low_signal: bool,
+
     #[arg(long, value_enum, default_value_t = SourceKind::Auto)]
     pub kind: SourceKind,
 
@@ -218,6 +231,29 @@ pub struct SourceAddArgs {
 
     #[arg(long = "tag")]
     pub tag: Vec<String>,
+
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SourceAutoImportArgs {
+    pub name: String,
+
+    #[arg(long, conflicts_with = "disable")]
+    pub enable: bool,
+
+    #[arg(long, conflicts_with = "enable")]
+    pub disable: bool,
+
+    #[arg(long)]
+    pub omnimem_cmd: Option<String>,
+
+    #[arg(long)]
+    pub omnimem_direct: bool,
+
+    #[arg(long)]
+    pub omnimem_include_low_signal: bool,
 
     #[arg(long)]
     pub json: bool,
@@ -246,6 +282,18 @@ pub struct SyncArgs {
 
     #[arg(long)]
     pub dry_run: bool,
+
+    #[arg(long)]
+    pub import: bool,
+
+    #[arg(long)]
+    pub omnimem_cmd: Option<String>,
+
+    #[arg(long)]
+    pub omnimem_direct: bool,
+
+    #[arg(long)]
+    pub omnimem_include_low_signal: bool,
 
     #[arg(long)]
     pub json: bool,

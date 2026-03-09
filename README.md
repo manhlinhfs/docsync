@@ -24,9 +24,9 @@ It works well for:
 - **JS-heavy docs** with optional headless fallback
 - **Git-native docs repos**
 
-Current stable version: **`1.3.3`**
+Current stable version: **`1.3.4`**
 
-Planned milestones after `v1.3.3`: see [ROADMAP.md](ROADMAP.md).
+Planned milestones after `v1.3.4`: see [ROADMAP.md](ROADMAP.md).
 
 ## **Quick Start**
 
@@ -76,6 +76,12 @@ docsync sync openclaw --json
 docsync import openclaw
 ```
 
+Or do sync and import in one step:
+
+```bash
+docsync sync openclaw --import
+```
+
 ## **Real Examples**
 
 ### **OpenClaw: sync a full docs website**
@@ -88,6 +94,16 @@ docsync source add openclaw \
 
 docsync sync openclaw
 docsync import openclaw --dry-run --json
+```
+
+If you want automatic OmniMem sync every time:
+
+```bash
+docsync source add openclaw \
+  --url https://docs.openclaw.ai/ \
+  --kind website \
+  --version-strategy date-snapshot \
+  --auto-import
 ```
 
 Good fit when the docs site has:
@@ -137,6 +153,23 @@ docsync sync openclaw-getting-started
 This is useful when you want to import one page without expanding the whole site.
 
 If the page URL clearly looks like docs, such as `/docs/...`, `/guides/...`, or `/start/...`, and the same host exposes `llms.txt` or sitemap indexes, `docsync` can automatically promote that page seed into full-site docs discovery.
+
+## **Automatic OmniMem Sync**
+
+Use one-shot automation:
+
+```bash
+docsync sync drizzle --import
+```
+
+Or enable it on the source itself:
+
+```bash
+docsync source auto-import drizzle --enable
+docsync source auto-import drizzle --enable --omnimem-direct
+```
+
+After that, a normal `docsync sync drizzle` will fetch docs and immediately import the snapshot into OmniMem.
 
 ## **How `docsync` Thinks**
 
