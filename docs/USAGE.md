@@ -13,6 +13,13 @@ docsync paths
 docsync paths --json
 ```
 
+## Generate shell completions
+
+```bash
+docsync completions bash
+docsync completions zsh
+```
+
 ## Use a proxy for blocked sites
 
 ```bash
@@ -21,6 +28,17 @@ docsync --proxy socks5h://user:pass@127.0.0.1:1080 probe https://docs.example.co
 docsync source add blocked-site \
   --url https://docs.example.com \
   --proxy http://127.0.0.1:7890 \
+  --kind website \
+  --version-strategy date-snapshot
+```
+
+## Use a custom browser command for dynamic docs
+
+```bash
+docsync --browser-cmd /usr/bin/chromium sync blocked-site
+docsync source add dynamic-site \
+  --url https://docs.example.com \
+  --browser-cmd /usr/bin/chromium \
   --kind website \
   --version-strategy date-snapshot
 ```
@@ -108,12 +126,22 @@ docsync sync postiz-page
 docsync sync supabase --ref master
 ```
 
+When a previous snapshot exists, `docsync sync` reports:
+
+- reused pages
+- changed/new pages
+- unchanged pages
+- removed pages
+
 ## Import a snapshot into OmniMem
 
 ```bash
 docsync import postiz-page --ref snapshot-20260309
 docsync import supabase --ref master --dry-run --json
+docsync import supabase --ref master --all-pages
 ```
+
+Incremental snapshots import only `new` and `changed` pages by default.
 
 ## Verify a snapshot with OmniMem search
 
@@ -122,6 +150,13 @@ docsync verify postiz-page "release notes" --ref snapshot-20260309
 docsync verify supabase "auth" --ref master --json
 ```
 
+## Migrate old runtime data
+
+```bash
+docsync migrate
+docsync migrate --json
+```
+
 ## Notes
 
-`v0.6.0` keeps the markdown-first HTTP flow, adds HTML fallback conversion for page seeds, adds git-native sync for `git-docs` sources, and adds OmniMem import/verify helpers with per-snapshot log files.
+`v1.0.0` includes incremental diff-aware sync, headless browser fallback, runtime migration, shell completions, and release automation on top of the markdown-first, HTML fallback, git-native, and OmniMem flows added earlier.

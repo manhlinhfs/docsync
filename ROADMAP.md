@@ -1,12 +1,12 @@
 # Roadmap
 
-This roadmap is version-first, not date-first. The sequence matters more than exact release dates.
+This roadmap is version-first, not date-first. `docsync` has now completed the planned path through `v1.0.0`.
 
 ## Release themes
 
 ### `v0.1.0` Foundation
 
-Status: implemented in this scaffold
+Status: implemented
 
 Scope:
 
@@ -25,7 +25,7 @@ Exit criteria:
 
 ### `v0.2.0` Discovery
 
-Status: implemented in the current release
+Status: implemented
 
 Scope:
 
@@ -44,7 +44,7 @@ Exit criteria:
 
 ### `v0.3.0` Markdown-First Fetch
 
-Status: implemented in the current release
+Status: implemented
 
 Scope:
 
@@ -62,7 +62,7 @@ Exit criteria:
 
 ### `v0.4.0` Git-Native Adapter
 
-Status: implemented in the current release
+Status: implemented
 
 Scope:
 
@@ -78,7 +78,7 @@ Exit criteria:
 
 ### `v0.5.0` HTML Normalization
 
-Status: implemented in the current release
+Status: implemented
 
 Scope:
 
@@ -94,7 +94,7 @@ Exit criteria:
 
 ### `v0.6.0` OmniMem Integration
 
-Status: implemented in the current release
+Status: implemented
 
 Scope:
 
@@ -110,12 +110,15 @@ Exit criteria:
 
 ### `v0.7.0` Incremental Sync
 
+Status: implemented
+
 Scope:
 
 - content hashing
 - page diffing
 - changed/new/removed page tracking
 - re-sync without re-fetching everything
+- changed-only OmniMem import by default on incremental snapshots
 
 Exit criteria:
 
@@ -123,18 +126,23 @@ Exit criteria:
 
 ### `v0.8.0` Headless and Dynamic Docs
 
+Status: implemented
+
 Scope:
 
 - browser-rendered adapter
 - JS-heavy docs support
 - fallback for client-side nav or generated content
 - capture of final DOM before normalization
+- source/global browser command configuration and proxy-aware browser launch
 
 Exit criteria:
 
 - difficult docs sites can still be snapshotted with bounded complexity
 
 ### `v0.9.0` Release Engineering
+
+Status: implemented
 
 Scope:
 
@@ -149,6 +157,8 @@ Exit criteria:
 - users can download release binaries for Linux/macOS/Windows
 
 ### `v1.0.0` Stable CLI
+
+Status: implemented
 
 Scope:
 

@@ -1,6 +1,6 @@
 [package]
 name = "docsync"
-version = "0.6.0"
+version = "1.0.0"
 edition = "2024"
 description = "Binary-first documentation sync CLI for AI retrieval workflows"
 license = "MIT"
@@ -10,6 +10,7 @@ readme = "README.md"
 anyhow = "1.0.100"
 chrono = { version = "0.4.42", features = ["serde"] }
 clap = { version = "4.5.53", features = ["derive"] }
+clap_complete = "4.5.61"
 html2md = "0.2"
 quick-xml = "0.38.4"
 reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "rustls-tls", "socks"] }

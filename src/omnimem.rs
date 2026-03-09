@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::config::AppPaths;
-use crate::models::SnapshotManifest;
+use crate::models::{PageChangeStatus, SnapshotManifest};
 use crate::util::now_utc_rfc3339;
 
 const DEFAULT_OMNIMEM_PATH: &str = "/root/omnimem/omnimem";
@@ -15,8 +15,10 @@ const DEFAULT_OMNIMEM_PATH: &str = "/root/omnimem/omnimem";
 pub struct ImportResult {
     pub source_name: String,
     pub snapshot_label: String,
+    pub selected_pages: usize,
     pub imported_pages: usize,
     pub failed_pages: usize,
+    pub skipped_unchanged_pages: usize,
     pub summary_path: PathBuf,
     pub omnimem_cmd: String,
     pub dry_run: bool,
@@ -41,8 +43,10 @@ struct OmniMemImportSummary {
     snapshot_label: String,
     omnimem_cmd: String,
     dry_run: bool,
+    selected_pages: usize,
     imported_pages: usize,
     failed_pages: usize,
+    skipped_unchanged_pages: usize,
     items: Vec<OmniMemImportItem>,
 }
 
@@ -77,6 +81,7 @@ pub fn import_snapshot(
     omnimem_cmd: Option<String>,
     direct: bool,
     dry_run: bool,
+    all_pages: bool,
 ) -> Result<ImportResult> {
     let snapshot_dir = resolve_snapshot_dir(paths, source_name, reference.as_deref())?;
     let snapshot_label = snapshot_dir
@@ -92,15 +97,28 @@ pub fn import_snapshot(
     let importable_pages = manifest
         .pages
         .iter()
+        .filter(|page| {
+            should_import_page(page, all_pages, manifest.previous_snapshot_label.is_some())
+        })
         .filter_map(|page| page.page_path.as_ref())
         .cloned()
         .collect::<Vec<_>>();
+    let selected_pages = importable_pages.len();
+    let skipped_unchanged_pages = manifest
+        .pages
+        .iter()
+        .filter(|page| {
+            !all_pages
+                && manifest.previous_snapshot_label.is_some()
+                && page.change_status == PageChangeStatus::Unchanged
+        })
+        .count();
 
     let mut items = Vec::new();
     let mut imported_pages = 0usize;
     let mut failed_pages = 0usize;
 
-    for page_path in importable_pages {
+    for page_path in &importable_pages {
         if dry_run {
             items.push(OmniMemImportItem {
                 page_path: page_path.display().to_string(),
@@ -146,8 +164,10 @@ pub fn import_snapshot(
         snapshot_label: snapshot_label.clone(),
         omnimem_cmd: omnimem_cmd.clone(),
         dry_run,
+        selected_pages,
         imported_pages,
         failed_pages,
+        skipped_unchanged_pages,
         items,
     };
     write_json(&summary_path, &summary)?;
@@ -155,8 +175,10 @@ pub fn import_snapshot(
     Ok(ImportResult {
         source_name: source_name.to_string(),
         snapshot_label,
+        selected_pages,
         imported_pages,
         failed_pages,
+        skipped_unchanged_pages,
         summary_path,
         omnimem_cmd,
         dry_run,
@@ -284,6 +306,24 @@ fn build_verify_args(query: &str, direct: bool) -> Vec<String> {
     args
 }
 
+fn should_import_page(
+    page: &crate::models::PageManifestEntry,
+    all_pages: bool,
+    has_previous_snapshot: bool,
+) -> bool {
+    if page.page_path.is_none() {
+        return false;
+    }
+    if all_pages || !has_previous_snapshot {
+        return true;
+    }
+
+    matches!(
+        page.change_status,
+        PageChangeStatus::New | PageChangeStatus::Changed | PageChangeStatus::Unknown
+    )
+}
+
 fn run_omnimem(cmd: &str, args: &[&str]) -> Result<std::process::Output> {
     Command::new(cmd).args(args).output().with_context(|| {
         format!(
@@ -333,6 +373,7 @@ mod tests {
             Some(fake.to_string_lossy().to_string()),
             false,
             false,
+            false,
         )?;
 
         assert_eq!(result.imported_pages, 1);
@@ -340,6 +381,73 @@ mod tests {
         assert!(result.summary_path.exists());
         let log = fs::read_to_string(root.join("omnimem-invocations.log"))?;
         assert!(log.contains("import"));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn skips_unchanged_pages_by_default_for_incremental_snapshot() -> Result<()> {
+        let root = make_temp_dir("omnimem-import-incremental");
+        let paths = make_app_paths(&root);
+        let snapshot_dir = create_snapshot_fixture(&paths, "demo", "snap-2")?;
+        let new_page = snapshot_dir.join("pages/new.md");
+        let unchanged_page = snapshot_dir.join("pages/unchanged.md");
+        fs::create_dir_all(new_page.parent().expect("page parent"))?;
+        fs::write(&new_page, "# New\n")?;
+        fs::write(&unchanged_page, "# Same\n")?;
+
+        let manifest = SnapshotManifest {
+            schema_version: 6,
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            source_name: "demo".to_string(),
+            entry_url: "https://example.com".to_string(),
+            source_kind: SourceKind::Website,
+            version_strategy: VersionStrategy::DateSnapshot,
+            source_ref: "snap-2".to_string(),
+            snapshot_label: "snap-2".to_string(),
+            snapshot_dir: snapshot_dir.clone(),
+            status: "fetched".to_string(),
+            previous_snapshot_label: Some("snap-1".to_string()),
+            detected_input_kind: DetectedInputKind::ContentPage,
+            suggested_mode: SuggestedMode::HybridSeed,
+            discovery: DiscoverySummary {
+                manifest_path: snapshot_dir.join("discovery.json"),
+                adapters: vec!["seed_page".to_string()],
+                frontier_count: 2,
+                llms_index_url: None,
+                llms_full_index_url: None,
+                sitemap_count: 0,
+            },
+            git: None,
+            fetch: None,
+            diff: None,
+            pages: vec![
+                page_entry(&new_page, crate::models::PageChangeStatus::New),
+                page_entry(&unchanged_page, crate::models::PageChangeStatus::Unchanged),
+            ],
+            notes: Vec::new(),
+        };
+        fs::write(
+            snapshot_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)?,
+        )?;
+
+        let fake = fake_omnimem_script(&root, "import-ok")?;
+        let result = import_snapshot(
+            &paths,
+            "demo",
+            Some("snap-2".to_string()),
+            Some(fake.to_string_lossy().to_string()),
+            false,
+            false,
+            false,
+        )?;
+
+        assert_eq!(result.selected_pages, 1);
+        assert_eq!(result.skipped_unchanged_pages, 1);
+        let log = fs::read_to_string(root.join("omnimem-invocations.log"))?;
+        assert!(log.contains("new.md"));
+        assert!(!log.contains("unchanged.md"));
         fs::remove_dir_all(root)?;
         Ok(())
     }
@@ -381,7 +489,7 @@ mod tests {
 
     fn write_manifest(snapshot_dir: &Path, page_paths: Vec<PathBuf>) -> Result<()> {
         let manifest = SnapshotManifest {
-            schema_version: 4,
+            schema_version: 6,
             created_at: "2026-03-09T00:00:00Z".to_string(),
             source_name: "demo".to_string(),
             entry_url: "https://example.com".to_string(),
@@ -391,6 +499,7 @@ mod tests {
             snapshot_label: "snap-1".to_string(),
             snapshot_dir: snapshot_dir.to_path_buf(),
             status: "fetched".to_string(),
+            previous_snapshot_label: None,
             detected_input_kind: DetectedInputKind::ContentPage,
             suggested_mode: SuggestedMode::HybridSeed,
             discovery: DiscoverySummary {
@@ -403,18 +512,26 @@ mod tests {
             },
             git: None,
             fetch: None,
+            diff: None,
             pages: page_paths
                 .into_iter()
                 .map(|path| crate::models::PageManifestEntry {
+                    page_key: format!("file://{}", path.display()),
                     url: format!("file://{}", path.display()),
                     final_url: format!("file://{}", path.display()),
                     fetch_method: "markdown_negotiation".to_string(),
                     status: "stored".to_string(),
+                    change_status: crate::models::PageChangeStatus::Unknown,
+                    reused_from_snapshot: None,
                     page_path: Some(path.clone()),
                     metadata_path: None,
-                    raw_path: path,
+                    raw_path: Some(path),
+                    rendered_raw_path: None,
                     content_type: Some("text/markdown".to_string()),
                     sha256: None,
+                    raw_sha256: None,
+                    etag: None,
+                    last_modified: None,
                     byte_size: 8,
                 })
                 .collect(),
@@ -425,6 +542,31 @@ mod tests {
             serde_json::to_string_pretty(&manifest)?,
         )?;
         Ok(())
+    }
+
+    fn page_entry(
+        path: &Path,
+        change_status: crate::models::PageChangeStatus,
+    ) -> crate::models::PageManifestEntry {
+        crate::models::PageManifestEntry {
+            page_key: format!("file://{}", path.display()),
+            url: format!("file://{}", path.display()),
+            final_url: format!("file://{}", path.display()),
+            fetch_method: "markdown_negotiation".to_string(),
+            status: "stored".to_string(),
+            change_status,
+            reused_from_snapshot: None,
+            page_path: Some(path.to_path_buf()),
+            metadata_path: None,
+            raw_path: Some(path.to_path_buf()),
+            rendered_raw_path: None,
+            content_type: Some("text/markdown".to_string()),
+            sha256: None,
+            raw_sha256: None,
+            etag: None,
+            last_modified: None,
+            byte_size: 8,
+        }
     }
 
     fn make_app_paths(root: &Path) -> AppPaths {

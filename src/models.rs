@@ -16,7 +16,10 @@ pub struct AppConfig {
     pub schema_version: u32,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
     pub default_proxy_url: Option<String>,
+    #[serde(default)]
+    pub default_browser_cmd: Option<String>,
     pub sources: BTreeMap<String, SourceDefinition>,
 }
 
@@ -24,10 +27,11 @@ impl Default for AppConfig {
     fn default() -> Self {
         let now = now_utc_rfc3339();
         Self {
-            schema_version: 1,
+            schema_version: 2,
             created_at: now.clone(),
             updated_at: now,
             default_proxy_url: None,
+            default_browser_cmd: None,
             sources: BTreeMap::new(),
         }
     }
@@ -46,7 +50,10 @@ impl AppConfig {
 pub struct SourceDefinition {
     pub name: String,
     pub entry_url: String,
+    #[serde(default)]
     pub proxy_url: Option<String>,
+    #[serde(default)]
+    pub browser_cmd: Option<String>,
     pub source_kind: SourceKind,
     pub repo_url: Option<String>,
     pub docs_path: Option<String>,
@@ -62,6 +69,7 @@ pub struct NewSource {
     pub name: String,
     pub entry_url: String,
     pub proxy_url: Option<String>,
+    pub browser_cmd: Option<String>,
     pub source_kind: SourceKind,
     pub repo_url: Option<String>,
     pub docs_path: Option<String>,
@@ -124,11 +132,15 @@ pub struct SnapshotManifest {
     pub snapshot_label: String,
     pub snapshot_dir: PathBuf,
     pub status: String,
+    #[serde(default)]
+    pub previous_snapshot_label: Option<String>,
     pub detected_input_kind: DetectedInputKind,
     pub suggested_mode: SuggestedMode,
     pub discovery: DiscoverySummary,
     pub git: Option<GitSummary>,
     pub fetch: Option<FetchSummary>,
+    #[serde(default)]
+    pub diff: Option<DiffSummary>,
     pub pages: Vec<PageManifestEntry>,
     pub notes: Vec<String>,
 }
@@ -148,7 +160,19 @@ pub struct FetchSummary {
     pub attempted: usize,
     pub stored_pages: usize,
     pub skipped_pages: usize,
+    #[serde(default)]
+    pub reused_pages: usize,
     pub method_counts: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffSummary {
+    pub previous_snapshot_label: Option<String>,
+    pub new_pages: usize,
+    pub changed_pages: usize,
+    pub unchanged_pages: usize,
+    pub removed_pages: usize,
+    pub import_candidates: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,16 +187,43 @@ pub struct GitSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageManifestEntry {
+    #[serde(default)]
+    pub page_key: String,
     pub url: String,
     pub final_url: String,
     pub fetch_method: String,
     pub status: String,
+    #[serde(default)]
+    pub change_status: PageChangeStatus,
+    #[serde(default)]
+    pub reused_from_snapshot: Option<String>,
     pub page_path: Option<PathBuf>,
     pub metadata_path: Option<PathBuf>,
-    pub raw_path: PathBuf,
+    #[serde(default)]
+    pub raw_path: Option<PathBuf>,
+    #[serde(default)]
+    pub rendered_raw_path: Option<PathBuf>,
     pub content_type: Option<String>,
+    #[serde(default)]
     pub sha256: Option<String>,
+    #[serde(default)]
+    pub raw_sha256: Option<String>,
+    #[serde(default)]
+    pub etag: Option<String>,
+    #[serde(default)]
+    pub last_modified: Option<String>,
     pub byte_size: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PageChangeStatus {
+    #[default]
+    Unknown,
+    New,
+    Changed,
+    Unchanged,
+    Removed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +279,7 @@ pub struct PageMetadata {
     pub source_name: String,
     pub snapshot_label: String,
     pub source_ref: String,
+    pub page_key: String,
     pub requested_url: String,
     pub final_url: String,
     pub fetch_method: String,
@@ -236,9 +288,17 @@ pub struct PageMetadata {
     pub status_code: u16,
     pub byte_size: u64,
     pub sha256: String,
+    #[serde(default)]
+    pub raw_sha256: Option<String>,
+    #[serde(default)]
+    pub etag: Option<String>,
+    #[serde(default)]
+    pub last_modified: Option<String>,
     pub x_markdown_tokens: Option<u32>,
     pub x_original_tokens: Option<u32>,
     pub content_signal: Option<String>,
     pub page_path: PathBuf,
     pub raw_path: PathBuf,
+    #[serde(default)]
+    pub rendered_raw_path: Option<PathBuf>,
 }

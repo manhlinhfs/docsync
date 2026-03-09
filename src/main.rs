@@ -3,6 +3,9 @@ mod config;
 mod discovery;
 mod fetch;
 mod git_sync;
+mod headless;
+mod incremental;
+mod migrate;
 mod models;
 mod network;
 mod omnimem;
@@ -14,11 +17,13 @@ mod util;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::{Shell, generate};
 use serde::Serialize;
 
-use crate::cli::{Cli, Commands, SourceCommands};
+use crate::cli::{Cli, Commands, CompletionShell, SourceCommands};
 use crate::config::{ensure_layout, load_config, resolve_paths};
+use crate::migrate::migrate_runtime;
 use crate::models::NewSource;
 use crate::omnimem::{import_snapshot, verify_snapshot};
 use crate::sources::{add_source, get_source, list_sources};
@@ -65,6 +70,27 @@ fn run() -> Result<()> {
                 println!("config file: {}", paths.config_file.display());
                 println!("sources dir: {}", paths.sources_dir.display());
                 println!("snapshots dir: {}", paths.snapshots_dir.display());
+            }
+        }
+        Commands::Completions(args) => {
+            let shell = match args.shell {
+                CompletionShell::Bash => Shell::Bash,
+                CompletionShell::Elvish => Shell::Elvish,
+                CompletionShell::Fish => Shell::Fish,
+                CompletionShell::Powershell => Shell::PowerShell,
+                CompletionShell::Zsh => Shell::Zsh,
+            };
+            print_completions(shell);
+        }
+        Commands::Migrate(args) => {
+            ensure_layout(&paths)?;
+            let result = migrate_runtime(&paths)?;
+            if args.json {
+                print_json(&result)?;
+            } else {
+                println!("Config updated: {}", result.config_updated);
+                println!("Manifests scanned: {}", result.manifests_scanned);
+                println!("Manifests rewritten: {}", result.manifests_rewritten);
             }
         }
         Commands::Probe(args) => {
@@ -125,6 +151,7 @@ fn run() -> Result<()> {
                 args.omnimem_cmd,
                 args.direct,
                 args.dry_run,
+                args.all_pages,
             )?;
             if args.json {
                 print_json(&result)?;
@@ -132,8 +159,13 @@ fn run() -> Result<()> {
                 println!("Source: {}", result.source_name);
                 println!("Snapshot: {}", result.snapshot_label);
                 println!("Dry run: {}", result.dry_run);
+                println!("Selected pages: {}", result.selected_pages);
                 println!("Imported pages: {}", result.imported_pages);
                 println!("Failed pages: {}", result.failed_pages);
+                println!(
+                    "Skipped unchanged pages: {}",
+                    result.skipped_unchanged_pages
+                );
                 println!("OmniMem command: {}", result.omnimem_cmd);
                 println!("Summary: {}", result.summary_path.display());
             }
@@ -147,6 +179,7 @@ fn run() -> Result<()> {
                         name: args.name,
                         entry_url: args.url,
                         proxy_url: args.proxy,
+                        browser_cmd: args.browser_cmd,
                         source_kind: args.kind,
                         repo_url: args.repo,
                         docs_path: args.docs_path,
@@ -164,6 +197,9 @@ fn run() -> Result<()> {
                         println!("Version strategy: {}", source.version_strategy);
                         if let Some(proxy_url) = source.proxy_url.as_deref() {
                             println!("Proxy: {proxy_url}");
+                        }
+                        if let Some(browser_cmd) = source.browser_cmd.as_deref() {
+                            println!("Browser command: {browser_cmd}");
                         }
                         if let Some(repo_url) = source.repo_url.as_deref() {
                             println!("Repo: {repo_url}");
@@ -203,6 +239,9 @@ fn run() -> Result<()> {
                         if let Some(proxy_url) = source.proxy_url.as_deref() {
                             println!("Proxy: {proxy_url}");
                         }
+                        if let Some(browser_cmd) = source.browser_cmd.as_deref() {
+                            println!("Browser command: {browser_cmd}");
+                        }
                         if let Some(repo) = source.repo_url.as_deref() {
                             println!("Repo URL: {repo}");
                         }
@@ -230,6 +269,7 @@ fn run() -> Result<()> {
                 args.reference,
                 args.dry_run,
                 cli.proxy.as_deref(),
+                cli.browser_cmd.as_deref(),
             )?;
             if args.json {
                 print_json(&result)?;
@@ -242,6 +282,13 @@ fn run() -> Result<()> {
                 println!("Discovered pages: {}", result.discovered_pages);
                 println!("Fetched pages: {}", result.fetched_pages);
                 println!("Skipped pages: {}", result.skipped_pages);
+                println!("Reused pages: {}", result.reused_pages);
+                println!("Changed/new pages: {}", result.changed_pages);
+                println!("Unchanged pages: {}", result.unchanged_pages);
+                println!("Removed pages: {}", result.removed_pages);
+                if let Some(previous_snapshot_label) = result.previous_snapshot_label.as_deref() {
+                    println!("Previous snapshot: {previous_snapshot_label}");
+                }
                 println!("Snapshot dir: {}", result.snapshot_dir.display());
                 println!(
                     "Discovery manifest: {}",
@@ -285,4 +332,9 @@ where
 {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
+}
+
+fn print_completions(shell: Shell) {
+    let mut command = Cli::command();
+    generate(shell, &mut command, "docsync", &mut std::io::stdout());
 }

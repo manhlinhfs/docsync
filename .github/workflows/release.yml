@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_name: docsync-x86_64-unknown-linux-gnu.tar.gz
+            binary_path: target/release/docsync
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive_name: docsync-x86_64-apple-darwin.tar.gz
+            binary_path: target/release/docsync
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_name: docsync-x86_64-pc-windows-msvc.zip
+            binary_path: target/release/docsync.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/docsync dist/docsync
+          tar -C dist -czf ${{ matrix.archive_name }} docsync
+
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/${{ matrix.target }}/release/docsync.exe dist/docsync.exe
+          Compress-Archive -Path dist/docsync.exe -DestinationPath ${{ matrix.archive_name }}
+
+      - name: Write checksums
+        shell: bash
+        run: |
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum ${{ matrix.archive_name }} > ${{ matrix.archive_name }}.sha256
+          else
+            shasum -a 256 ${{ matrix.archive_name }} > ${{ matrix.archive_name }}.sha256
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            ${{ matrix.archive_name }}
+            ${{ matrix.archive_name }}.sha256
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten release assets
+        run: find dist -type f -maxdepth 2 -exec mv {} . \;
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            docsync-*.tar.gz
+            docsync-*.tar.gz.sha256
+            docsync-*.zip
+            docsync-*.zip.sha256

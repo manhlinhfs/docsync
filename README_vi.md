@@ -37,9 +37,16 @@ Dang proxy URL duoc ho tro:
 - `socks5://host:port`
 - `socks5h://user:pass@host:port`
 
+Headless browser fallback co the cau hinh qua:
+
+- global CLI override: `--browser-cmd /usr/bin/chromium`
+- per-source setting: `docsync source add ... --browser-cmd ...`
+- runtime config: `default_browser_cmd` trong `config.json`
+- tu dong detect cac Chromium-based browser pho bien tren `PATH`
+
 ## Trang thai
 
-Version hien tai: `0.6.0`
+Version hien tai: `1.0.0`
 
 Ban phat hanh nay tap trung vao:
 
@@ -49,10 +56,11 @@ Ban phat hanh nay tap trung vao:
 - fetch trang theo uu tien markdown, luu raw response va sidecar metadata tung page
 - git-native docs sync tu ref cua repo, co docs root detection va nav manifest discovery
 - HTML fallback conversion cho cac website page khong expose markdown truc tiep
-- lenh import va verify voi OmniMem, kem log theo snapshot
-- baseline ve docs, roadmap va architecture
-
-Incremental sync, ho tro docs headless, va release engineering se nam o cac milestone tiep theo.
+- incremental sync voi snapshot lineage, diff summary, reused pages, va removed page tracking
+- headless browser fallback cho dynamic docs page khi static HTML extraction qua mong
+- lenh import va verify voi OmniMem, kem changed-only incremental import mac dinh
+- migrate command cho runtime schema va compatibility guarantee cho manifest/config
+- shell completions, GitHub Actions CI/release automation, va install scripts
 
 ## Tai sao dung Rust
 
@@ -70,6 +78,7 @@ docsync init
 docsync source add postiz --url https://docs.postiz.com --kind website --tag docs --tag mintlify
 docsync probe https://docs.postiz.com/introduction
 docsync sync postiz --ref snapshot-20260307
+docsync import postiz --ref snapshot-20260307
 ```
 
 ## Cac lenh hien co
@@ -107,6 +116,7 @@ Dang ky source definition tu mot entry URL:
 docsync source add shadcn-ui \
   --url https://ui.shadcn.com \
   --proxy http://127.0.0.1:7890 \
+  --browser-cmd /usr/bin/chromium \
   --kind git-docs \
   --repo https://github.com/shadcn-ui/ui \
   --docs-path apps/v4/content/docs \
@@ -152,13 +162,24 @@ No dong thoi classify URL thanh cac intake mode tong quat nhu:
 
 Import mot snapshot da luu vao OmniMem va ghi `omnimem-import.json` trong snapshot do.
 
+Voi incremental snapshot, mac dinh lenh nay chi import cac page `new` va `changed`.
+Dung `--all-pages` neu ban muon full re-import.
+
 ### `docsync verify <source> <query>`
 
 Chay OmniMem search helper tren mot snapshot da luu va ghi `omnimem-verify.json`.
 
+### `docsync completions <shell>`
+
+Sinh shell completion cho `bash`, `zsh`, `fish`, `elvish`, hoac `powershell`.
+
+### `docsync migrate`
+
+Rewrite config runtime va snapshot manifests cu sang stable schema hien tai.
+
 ### `docsync sync <source>`
 
-`v0.6.0` thuc hien discovery va sau do chon markdown-first HTTP fetch, HTML fallback, hoac git-native repo sync:
+`v1.0.0` thuc hien discovery va sau do chon incremental markdown-first HTTP fetch, HTML fallback, headless fallback, hoac git-native repo sync:
 
 - snapshot directory
 - `discovery.json`
@@ -172,6 +193,7 @@ Chay OmniMem search helper tren mot snapshot da luu va ghi `omnimem-verify.json`
 
 Voi `git-docs`, `docsync` clone repo, resolve ref duoc yeu cau, detect hoac dung `docs_path`, snapshot truc tiep cac file markdown, va record nav manifests nhu `meta.json`, `docs.json`, hoac `mint.json`.
 Voi page seed chi tra HTML, `docsync` convert HTML do sang Markdown va luu raw HTML body cung noi dung da normalize.
+Neu da co snapshot truoc do, `docsync` se ghi them `new`, `changed`, `unchanged`, `removed` vao `manifest.json`, reuse page co validator, va report diff counts tren CLI output.
 
 ## Runtime layout
 
@@ -216,6 +238,8 @@ cargo fmt
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [INTAKE_MODEL.md](docs/INTAKE_MODEL.md)
 - [LANGUAGE_POLICY.md](docs/LANGUAGE_POLICY.md)
+- [MIGRATION.md](docs/MIGRATION.md)
+- [RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
 - [USAGE.md](docs/USAGE.md)
 - [RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - [ROADMAP.md](ROADMAP.md)

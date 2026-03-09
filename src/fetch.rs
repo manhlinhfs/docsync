@@ -1,16 +1,19 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use html2md::parse_html;
+use reqwest::StatusCode;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use url::Url;
 
+use crate::headless::{render_url, should_try_headless};
+use crate::incremental::{PreviousPageState, sha256_hex};
 use crate::models::{
-    DiscoveredPage, FetchSummary, PageManifestEntry, PageMetadata, SourceDefinition,
+    DiscoveredPage, FetchSummary, PageChangeStatus, PageManifestEntry, PageMetadata,
+    SourceDefinition,
 };
 use crate::network::build_http_client;
 use crate::util::{ensure_directory, now_utc_rfc3339};
@@ -27,7 +30,9 @@ pub fn fetch_snapshot_pages(
     source_ref: &str,
     snapshot_label: &str,
     frontier: &[DiscoveredPage],
+    previous_pages: Option<&BTreeMap<String, PreviousPageState>>,
     proxy_url: Option<&str>,
+    browser_cmd: Option<&str>,
 ) -> Result<FetchOutcome> {
     let client = build_http_client(30, proxy_url)?;
 
@@ -40,6 +45,8 @@ pub fn fetch_snapshot_pages(
     let mut manifest_pages = Vec::new();
     let mut stored_pages = 0usize;
     let mut skipped_pages = 0usize;
+    let mut reused_pages = 0usize;
+    let mut seen_keys = BTreeSet::new();
 
     for page in frontier {
         let fetched = fetch_one_page(
@@ -50,7 +57,11 @@ pub fn fetch_snapshot_pages(
             source_ref,
             snapshot_label,
             page,
+            previous_pages.and_then(|pages| pages.get(&page.url)),
+            proxy_url,
+            browser_cmd,
         )?;
+        seen_keys.insert(fetched.page_key.clone());
 
         *method_counts
             .entry(fetched.fetch_method.clone())
@@ -61,8 +72,38 @@ pub fn fetch_snapshot_pages(
         } else {
             skipped_pages += 1;
         }
+        if fetched.reused_from_snapshot.is_some() {
+            reused_pages += 1;
+        }
 
         manifest_pages.push(fetched);
+    }
+
+    if let Some(previous_pages) = previous_pages {
+        for previous in previous_pages.values() {
+            if !seen_keys.contains(&previous.page_key) {
+                seen_keys.insert(previous.page_key.clone());
+                manifest_pages.push(PageManifestEntry {
+                    page_key: previous.page_key.clone(),
+                    url: String::new(),
+                    final_url: String::new(),
+                    fetch_method: previous.fetch_method.clone(),
+                    status: "removed".to_string(),
+                    change_status: PageChangeStatus::Removed,
+                    reused_from_snapshot: Some(previous.snapshot_label.clone()),
+                    page_path: None,
+                    metadata_path: None,
+                    raw_path: None,
+                    rendered_raw_path: None,
+                    content_type: previous.content_type.clone(),
+                    sha256: previous.content_hash.clone(),
+                    raw_sha256: previous.raw_hash.clone(),
+                    etag: previous.etag.clone(),
+                    last_modified: previous.last_modified.clone(),
+                    byte_size: 0,
+                });
+            }
+        }
     }
 
     Ok(FetchOutcome {
@@ -70,6 +111,7 @@ pub fn fetch_snapshot_pages(
             attempted: frontier.len(),
             stored_pages,
             skipped_pages,
+            reused_pages,
             method_counts,
         },
         pages: manifest_pages,
@@ -84,46 +126,154 @@ fn fetch_one_page(
     source_ref: &str,
     snapshot_label: &str,
     page: &DiscoveredPage,
+    previous: Option<&PreviousPageState>,
+    proxy_url: Option<&str>,
+    browser_cmd: Option<&str>,
 ) -> Result<PageManifestEntry> {
     let requested_url = Url::parse(&page.url)
         .with_context(|| format!("failed to parse discovered page URL {}", page.url))?;
 
-    let response = client
-        .get(requested_url.clone())
-        .header(
-            ACCEPT,
-            HeaderValue::from_static("text/markdown, text/plain;q=0.9, */*;q=0.1"),
-        )
+    let mut request = client.get(requested_url.clone()).header(
+        ACCEPT,
+        HeaderValue::from_static("text/markdown, text/plain;q=0.9, */*;q=0.1"),
+    );
+    if let Some(previous) = previous {
+        if let Some(etag) = previous.etag.as_deref() {
+            request = request.header("if-none-match", etag);
+        }
+        if let Some(last_modified) = previous.last_modified.as_deref() {
+            request = request.header("if-modified-since", last_modified);
+        }
+    }
+
+    let response = request
         .send()
         .with_context(|| format!("failed to fetch {}", page.url))?;
-
     let status_code = response.status().as_u16();
     let final_url = response.url().clone();
     let headers = response.headers().clone();
     let content_type = header_value(&headers, CONTENT_TYPE);
+    let etag = header_value_str(&headers, "etag");
+    let last_modified = header_value_str(&headers, "last-modified");
+    let page_key = final_url.to_string();
+    let stem = storage_stem(&final_url);
+    let page_path = markdown_page_path(pages_root, &stem);
+    let metadata_path = metadata_path_for(&page_path);
+    let raw_path = raw_root.join(format!("{stem}.body"));
+    let rendered_raw_path = raw_root.join(format!("{stem}.rendered.html"));
+
+    if response.status() == StatusCode::NOT_MODIFIED {
+        if let Some(previous) = previous {
+            let content_hash = previous.content_hash.clone().or_else(|| {
+                previous
+                    .page_path
+                    .as_deref()
+                    .and_then(|path| fs::read(path).ok())
+                    .map(|bytes| sha256_hex(&bytes))
+            });
+            let byte_size = if let Some(previous_page_path) = previous.page_path.as_deref() {
+                copy_artifact(previous_page_path, &page_path)?;
+                page_path
+                    .metadata()
+                    .with_context(|| format!("failed to stat {}", page_path.display()))?
+                    .len()
+            } else {
+                0
+            };
+            let raw_output_path = if let Some(previous_raw_path) = previous.raw_path.as_deref() {
+                copy_artifact(previous_raw_path, &raw_path)?;
+                Some(raw_path.clone())
+            } else {
+                None
+            };
+            let rendered_raw_output_path =
+                if let Some(previous_rendered_raw_path) = previous.rendered_raw_path.as_deref() {
+                    copy_artifact(previous_rendered_raw_path, &rendered_raw_path)?;
+                    Some(rendered_raw_path.clone())
+                } else {
+                    None
+                };
+            if page_path.is_file() {
+                let metadata = PageMetadata {
+                    schema_version: 2,
+                    fetched_at: now_utc_rfc3339(),
+                    source_name: source.name.clone(),
+                    snapshot_label: snapshot_label.to_string(),
+                    source_ref: source_ref.to_string(),
+                    page_key: previous.page_key.clone(),
+                    requested_url: requested_url.to_string(),
+                    final_url: final_url.to_string(),
+                    fetch_method: previous.fetch_method.clone(),
+                    discovered_from: page.discovered_from,
+                    content_type: previous.content_type.clone(),
+                    status_code,
+                    byte_size,
+                    sha256: content_hash.clone().unwrap_or_default(),
+                    raw_sha256: previous.raw_hash.clone(),
+                    etag: previous.etag.clone(),
+                    last_modified: previous.last_modified.clone(),
+                    x_markdown_tokens: None,
+                    x_original_tokens: None,
+                    content_signal: None,
+                    page_path: page_path.clone(),
+                    raw_path: raw_output_path
+                        .clone()
+                        .unwrap_or_else(|| raw_root.join(format!("{stem}.missing.body"))),
+                    rendered_raw_path: rendered_raw_output_path.clone(),
+                };
+                write_json(&metadata_path, &metadata)?;
+            }
+
+            return Ok(PageManifestEntry {
+                page_key: previous.page_key.clone(),
+                url: requested_url.to_string(),
+                final_url: final_url.to_string(),
+                fetch_method: previous.fetch_method.clone(),
+                status: "reused_not_modified".to_string(),
+                change_status: PageChangeStatus::Unchanged,
+                reused_from_snapshot: Some(previous.snapshot_label.clone()),
+                page_path: if page_path.is_file() {
+                    Some(page_path)
+                } else {
+                    None
+                },
+                metadata_path: if metadata_path.is_file() {
+                    Some(metadata_path)
+                } else {
+                    None
+                },
+                raw_path: raw_output_path,
+                rendered_raw_path: rendered_raw_output_path,
+                content_type: previous.content_type.clone(),
+                sha256: content_hash,
+                raw_sha256: previous.raw_hash.clone(),
+                etag: previous.etag.clone(),
+                last_modified: previous.last_modified.clone(),
+                byte_size,
+            });
+        }
+    }
+
     let body = response
         .bytes()
         .with_context(|| format!("failed to read {}", page.url))?;
     let body_vec = body.to_vec();
     let byte_size = body_vec.len() as u64;
-    let sha256 = sha256_hex(&body_vec);
-
-    let stem = storage_stem(&final_url);
-    let raw_path = raw_root.join(format!("{stem}.body"));
+    let raw_sha256 = sha256_hex(&body_vec);
     write_bytes(&raw_path, &body_vec)?;
 
     let markdown_supported = is_markdown_response(&final_url, content_type.as_deref());
-
     if markdown_supported && (200..300).contains(&status_code) {
-        let page_path = markdown_page_path(pages_root, &stem);
         write_bytes(&page_path, &body_vec)?;
-        let metadata_path = metadata_path_for(&page_path);
+        let content_hash = sha256_hex(&body_vec);
+        let change_status = compare_change(previous, &content_hash);
         let metadata = PageMetadata {
-            schema_version: 1,
+            schema_version: 2,
             fetched_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             snapshot_label: snapshot_label.to_string(),
             source_ref: source_ref.to_string(),
+            page_key: page_key.clone(),
             requested_url: requested_url.to_string(),
             final_url: final_url.to_string(),
             fetch_method: "markdown_negotiation".to_string(),
@@ -131,71 +281,111 @@ fn fetch_one_page(
             content_type: content_type.clone(),
             status_code,
             byte_size,
-            sha256: sha256.clone(),
+            sha256: content_hash.clone(),
+            raw_sha256: Some(raw_sha256.clone()),
+            etag: etag.clone(),
+            last_modified: last_modified.clone(),
             x_markdown_tokens: parse_u32_header(&headers, "x-markdown-tokens"),
             x_original_tokens: parse_u32_header(&headers, "x-original-tokens"),
             content_signal: header_value_str(&headers, "content-signal"),
             page_path: page_path.clone(),
             raw_path: raw_path.clone(),
+            rendered_raw_path: None,
         };
         write_json(&metadata_path, &metadata)?;
 
         return Ok(PageManifestEntry {
+            page_key,
             url: requested_url.to_string(),
             final_url: final_url.to_string(),
             fetch_method: "markdown_negotiation".to_string(),
             status: "stored".to_string(),
+            change_status,
+            reused_from_snapshot: None,
             page_path: Some(page_path),
             metadata_path: Some(metadata_path),
-            raw_path,
+            raw_path: Some(raw_path),
+            rendered_raw_path: None,
             content_type,
-            sha256: Some(sha256),
+            sha256: Some(content_hash),
+            raw_sha256: Some(raw_sha256),
+            etag,
+            last_modified,
             byte_size,
         });
     }
 
     if is_html_response(content_type.as_deref()) && (200..300).contains(&status_code) {
-        let page_path = markdown_page_path(pages_root, &stem);
-        let converted_markdown = html_to_markdown(&body_vec);
-        write_bytes(&page_path, converted_markdown.as_bytes())?;
-        let metadata_path = metadata_path_for(&page_path);
+        let html = String::from_utf8_lossy(&body_vec);
+        let fallback_markdown = html_to_markdown(&body_vec);
+        let mut final_markdown = fallback_markdown.clone();
+        let mut fetch_method = "html_fallback".to_string();
+        let mut rendered_raw_output_path = None;
+
+        if let Some(browser_cmd) = browser_cmd {
+            if should_try_headless(&html, &fallback_markdown) {
+                if let Ok(rendered_html) = render_url(browser_cmd, final_url.as_str(), proxy_url) {
+                    write_bytes(&rendered_raw_path, rendered_html.as_bytes())?;
+                    final_markdown = html_to_markdown(rendered_html.as_bytes());
+                    fetch_method = "headless_html_fallback".to_string();
+                    rendered_raw_output_path = Some(rendered_raw_path.clone());
+                }
+            }
+        }
+
+        write_bytes(&page_path, final_markdown.as_bytes())?;
+        let content_hash = sha256_hex(final_markdown.as_bytes());
+        let change_status = compare_change(previous, &content_hash);
         let metadata = PageMetadata {
-            schema_version: 1,
+            schema_version: 2,
             fetched_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             snapshot_label: snapshot_label.to_string(),
             source_ref: source_ref.to_string(),
+            page_key: page_key.clone(),
             requested_url: requested_url.to_string(),
             final_url: final_url.to_string(),
-            fetch_method: "html_fallback".to_string(),
+            fetch_method: fetch_method.clone(),
             discovered_from: page.discovered_from,
             content_type: content_type.clone(),
             status_code,
             byte_size,
-            sha256: sha256.clone(),
+            sha256: content_hash.clone(),
+            raw_sha256: Some(raw_sha256.clone()),
+            etag: etag.clone(),
+            last_modified: last_modified.clone(),
             x_markdown_tokens: parse_u32_header(&headers, "x-markdown-tokens"),
             x_original_tokens: parse_u32_header(&headers, "x-original-tokens"),
             content_signal: header_value_str(&headers, "content-signal"),
             page_path: page_path.clone(),
             raw_path: raw_path.clone(),
+            rendered_raw_path: rendered_raw_output_path.clone(),
         };
         write_json(&metadata_path, &metadata)?;
 
         return Ok(PageManifestEntry {
+            page_key,
             url: requested_url.to_string(),
             final_url: final_url.to_string(),
-            fetch_method: "html_fallback".to_string(),
+            fetch_method,
             status: "stored".to_string(),
+            change_status,
+            reused_from_snapshot: None,
             page_path: Some(page_path),
             metadata_path: Some(metadata_path),
-            raw_path,
+            raw_path: Some(raw_path),
+            rendered_raw_path: rendered_raw_output_path,
             content_type,
-            sha256: Some(sha256),
+            sha256: Some(content_hash),
+            raw_sha256: Some(raw_sha256),
+            etag,
+            last_modified,
             byte_size,
         });
     }
 
     Ok(PageManifestEntry {
+        page_key,
         url: requested_url.to_string(),
         final_url: final_url.to_string(),
         fetch_method: "markdown_negotiation".to_string(),
@@ -204,11 +394,17 @@ fn fetch_one_page(
         } else {
             format!("skipped_http_{status_code}")
         },
+        change_status: PageChangeStatus::Unknown,
+        reused_from_snapshot: None,
         page_path: None,
         metadata_path: None,
-        raw_path,
+        raw_path: Some(raw_path),
+        rendered_raw_path: None,
         content_type,
-        sha256: Some(sha256),
+        sha256: None,
+        raw_sha256: Some(raw_sha256),
+        etag,
+        last_modified,
         byte_size,
     })
 }
@@ -301,21 +497,7 @@ fn html_to_markdown(bytes: &[u8]) -> String {
 }
 
 fn short_hash(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    hex_encode(&digest[..4])
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    hex_encode(&digest)
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push_str(&format!("{byte:02x}"));
-    }
-    output
+    sha256_hex(bytes)[..8].to_string()
 }
 
 fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -334,6 +516,28 @@ where
     }
     let body = serde_json::to_string_pretty(value)?;
     fs::write(path, body).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn copy_artifact(source: &Path, target: &Path) -> Result<()> {
+    if let Some(parent) = target.parent() {
+        ensure_directory(parent)?;
+    }
+    fs::copy(source, target).with_context(|| {
+        format!(
+            "failed to copy {} to {}",
+            source.display(),
+            target.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn compare_change(previous: Option<&PreviousPageState>, current_hash: &str) -> PageChangeStatus {
+    match previous.and_then(|value| value.content_hash.as_deref()) {
+        None => PageChangeStatus::New,
+        Some(previous_hash) if previous_hash == current_hash => PageChangeStatus::Unchanged,
+        Some(_) => PageChangeStatus::Changed,
+    }
 }
 
 fn parse_u32_header(headers: &HeaderMap, name: &str) -> Option<u32> {

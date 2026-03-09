@@ -37,9 +37,16 @@ Supported proxy URL forms include:
 - `socks5://host:port`
 - `socks5h://user:pass@host:port`
 
+Headless browser fallback can be configured through:
+
+- global CLI override: `--browser-cmd /usr/bin/chromium`
+- per-source setting: `docsync source add ... --browser-cmd ...`
+- runtime config: `default_browser_cmd` in `config.json`
+- automatic detection of common Chromium-based browsers on `PATH`
+
 ## Status
 
-Current version: `0.6.0`
+Current version: `1.0.0`
 
 This release focuses on:
 
@@ -49,10 +56,11 @@ This release focuses on:
 - markdown-first page fetch with raw response archival and per-page metadata sidecars
 - git-native docs sync from repository refs with docs root detection and nav manifest discovery
 - HTML fallback conversion for website pages that do not expose markdown directly
-- OmniMem import and verification commands with per-snapshot logs
-- project docs, release planning, and architecture baseline
-
-Incremental sync, headless docs support, and release engineering are staged across later roadmap versions.
+- incremental sync with snapshot lineage, diff summaries, reused pages, and removed page tracking
+- headless browser fallback for dynamic docs pages when static HTML extraction is too thin
+- OmniMem import and verification commands with per-snapshot logs and changed-only incremental import by default
+- runtime migration command and stable schema compatibility guarantees
+- shell completion generation, GitHub Actions CI/release automation, and install scripts
 
 ## Why Rust
 
@@ -70,6 +78,7 @@ docsync init
 docsync source add postiz --url https://docs.postiz.com --kind website --tag docs --tag mintlify
 docsync probe https://docs.postiz.com/introduction
 docsync sync postiz --ref snapshot-20260307
+docsync import postiz --ref snapshot-20260307
 ```
 
 ## Current commands
@@ -107,6 +116,7 @@ Register a source definition from an entry URL:
 docsync source add shadcn-ui \
   --url https://ui.shadcn.com \
   --proxy http://127.0.0.1:7890 \
+  --browser-cmd /usr/bin/chromium \
   --kind git-docs \
   --repo https://github.com/shadcn-ui/ui \
   --docs-path apps/v4/content/docs \
@@ -152,13 +162,24 @@ It also classifies the URL into a generic intake mode such as:
 
 Import a stored snapshot into OmniMem and write `omnimem-import.json` under that snapshot.
 
+For incremental snapshots, `docsync import` imports only `new` and `changed` pages by default.
+Use `--all-pages` when you explicitly want a full re-import.
+
 ### `docsync verify <source> <query>`
 
 Run an OmniMem search helper against a stored snapshot and write `omnimem-verify.json`.
 
+### `docsync completions <shell>`
+
+Generate shell completion scripts for `bash`, `zsh`, `fish`, `elvish`, or `powershell`.
+
+### `docsync migrate`
+
+Rewrite old runtime config and snapshot manifests into the current stable schema.
+
 ### `docsync sync <source>`
 
-`v0.6.0` now performs discovery plus either markdown-first HTTP fetch, HTML fallback, or git-native repo sync:
+`v1.0.0` performs discovery plus incremental markdown-first HTTP fetch, HTML fallback, headless fallback, or git-native repo sync:
 
 - snapshot directory
 - `discovery.json`
@@ -174,6 +195,7 @@ Run an OmniMem search helper against a stored snapshot and write `omnimem-verify
 
 For `git-docs` sources, `docsync` clones the repo, resolves the requested ref, detects or uses `docs_path`, snapshots markdown files directly, and records nav manifests such as `meta.json`, `docs.json`, or `mint.json`.
 For HTML-only page seeds, `docsync` converts the fetched HTML into Markdown and stores the raw HTML body alongside the normalized page.
+When a previous snapshot exists, `docsync` also records `new`, `changed`, `unchanged`, and `removed` page state in `manifest.json`, reuses validator-backed pages, and reports diff counts in CLI output.
 
 ## Runtime layout
 
@@ -218,6 +240,8 @@ cargo fmt
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [INTAKE_MODEL.md](docs/INTAKE_MODEL.md)
 - [LANGUAGE_POLICY.md](docs/LANGUAGE_POLICY.md)
+- [MIGRATION.md](docs/MIGRATION.md)
+- [RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
 - [USAGE.md](docs/USAGE.md)
 - [RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - [ROADMAP.md](ROADMAP.md)

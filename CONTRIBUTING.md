@@ -38,3 +38,4 @@ This project is expected to ship prebuilt binaries. That means:
 - error messages matter
 - config path behavior must stay predictable
 - breaking config/schema changes require an explicit migration plan
+- release automation, install scripts, and shell completions must stay aligned with real asset names

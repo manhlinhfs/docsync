@@ -1,15 +1,31 @@
 # Changelog
 
-## `Unreleased`
+## `1.0.0` - 2026-03-09
 
 Added:
 
 - multilingual root documentation parity with `README.md`, `README_vi.md`, and `README_ru.md`
 - `docs/LANGUAGE_POLICY.md` to make translation completeness a standing release requirement
+- incremental sync with previous-snapshot lineage, page diff state, and reused page tracking
+- headless browser fallback with source/global browser command support
+- `docsync completions <shell>` for `bash`, `zsh`, `fish`, `elvish`, and `powershell`
+- `docsync migrate` to upgrade runtime config and snapshot manifests into the stable schema
+- GitHub Actions CI and release workflows
+- install scripts for Unix and Windows release binaries
+- fake tests for migration, headless rendering, incremental OmniMem import, and git diff classification
 
 Changed:
 
 - release and contribution rules now require synchronized root user documentation across all supported languages
+- `docsync import` now imports only changed pages by default when a snapshot has a previous baseline
+- runtime config schema now supports `default_browser_cmd`
+- snapshot manifests now record `previous_snapshot_label`, diff summaries, validator metadata, and per-page change state
+- project docs and roadmap now describe the completed path through `v1.0.0`
+
+Stable guarantees:
+
+- `config.json`, `manifest.json`, `discovery.json`, and page sidecars are now treated as stable `1.0.0` runtime interfaces
+- older runtime state remains migratable through `docsync migrate`
 
 ## `0.6.0` - 2026-03-09
 

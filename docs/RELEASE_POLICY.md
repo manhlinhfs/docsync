@@ -4,9 +4,9 @@
 
 `docsync` uses semantic versioning.
 
-### Minor releases before `1.0`
+### Stable releases after `1.0.0`
 
-Before `1.0.0`, minor releases may still change schemas or command behavior, but each such change must be documented in release notes and roadmap notes.
+After `1.0.0`, user-visible command behavior and schema files should remain backward-compatible unless a migration command and release note explicitly say otherwise.
 
 ### Patch releases
 
@@ -44,4 +44,5 @@ Each release should eventually include:
 
 - `config.json`
 - `manifest.json`
-- future discovery and page metadata files
+- `discovery.json`
+- per-page metadata sidecars

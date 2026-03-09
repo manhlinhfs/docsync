@@ -71,6 +71,7 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             default_proxy_url: Some("http://config-proxy:8080".to_string()),
+            default_browser_cmd: None,
             sources: BTreeMap::new(),
         };
         let source = source_with_proxy(Some("http://source-proxy:8080"));
@@ -86,6 +87,7 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             default_proxy_url: Some("http://config-proxy:8080".to_string()),
+            default_browser_cmd: None,
             sources: BTreeMap::new(),
         };
         let source = source_with_proxy(Some("http://source-proxy:8080"));
@@ -103,8 +105,7 @@ mod tests {
     fn accepts_http_and_socks_proxy_urls() {
         build_http_client(5, Some("http://user:pass@127.0.0.1:8080")).expect("http proxy");
         build_http_client(5, Some("socks5://127.0.0.1:1080")).expect("socks5 proxy");
-        build_http_client(5, Some("socks5h://user:pass@127.0.0.1:1080"))
-            .expect("socks5h proxy");
+        build_http_client(5, Some("socks5h://user:pass@127.0.0.1:1080")).expect("socks5h proxy");
     }
 
     fn source_with_proxy(proxy_url: Option<&str>) -> SourceDefinition {
@@ -112,6 +113,7 @@ mod tests {
             name: "demo".to_string(),
             entry_url: "https://example.com".to_string(),
             proxy_url: proxy_url.map(ToOwned::to_owned),
+            browser_cmd: None,
             source_kind: SourceKind::Website,
             repo_url: None,
             docs_path: None,

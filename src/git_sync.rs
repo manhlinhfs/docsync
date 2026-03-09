@@ -8,8 +8,9 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+use crate::incremental::PreviousPageState;
 use crate::models::{
-    DiscoveredPage, DiscoveryManifest, DiscoveryOrigin, FetchSummary, GitSummary,
+    DiscoveredPage, DiscoveryManifest, DiscoveryOrigin, FetchSummary, GitSummary, PageChangeStatus,
     PageManifestEntry, PageMetadata, SourceDefinition,
 };
 use crate::network::apply_proxy_to_git_command;
@@ -39,6 +40,8 @@ pub fn sync_git_source(
     source_ref: &str,
     snapshot_label: &str,
     write_snapshot: bool,
+    previous_snapshot_label: Option<&str>,
+    previous_pages: Option<&BTreeMap<String, PreviousPageState>>,
     proxy_url: Option<&str>,
 ) -> Result<GitSyncOutcome> {
     let repo_url = source.repo_url.clone().with_context(|| {
@@ -112,6 +115,8 @@ pub fn sync_git_source(
             &repo_url,
             &docs_root,
             &markdown_files,
+            previous_snapshot_label,
+            previous_pages,
         )?
     } else {
         (
@@ -119,6 +124,7 @@ pub fn sync_git_source(
                 attempted: markdown_files.len(),
                 stored_pages: 0,
                 skipped_pages: 0,
+                reused_pages: 0,
                 method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
             },
             Vec::new(),
@@ -180,6 +186,8 @@ fn snapshot_git_pages(
     repo_url: &str,
     docs_root: &Path,
     markdown_files: &[PathBuf],
+    previous_snapshot_label: Option<&str>,
+    previous_pages: Option<&BTreeMap<String, PreviousPageState>>,
 ) -> Result<(FetchSummary, Vec<PageManifestEntry>)> {
     let pages_root = snapshot_dir.join("pages");
     let raw_root = snapshot_dir.join("raw");
@@ -187,9 +195,12 @@ fn snapshot_git_pages(
     ensure_directory(&raw_root)?;
 
     let mut pages = Vec::new();
+    let mut reused_pages = 0usize;
+    let mut seen_keys = std::collections::BTreeSet::new();
 
     for file_path in markdown_files {
         let relative = relative_to(docs_root, file_path)?;
+        seen_keys.insert(relative.clone());
         let page_path = pages_root.join(&relative);
         let raw_path = raw_root.join(&relative);
         copy_file(file_path, &page_path)?;
@@ -198,13 +209,24 @@ fn snapshot_git_pages(
         let bytes = fs::read(file_path)
             .with_context(|| format!("failed to read source docs file {}", file_path.display()))?;
         let sha256 = sha256_hex(&bytes);
+        let change_status = match previous_pages.and_then(|pages| pages.get(&relative)) {
+            None => PageChangeStatus::New,
+            Some(previous) if previous.content_hash.as_deref() == Some(sha256.as_str()) => {
+                PageChangeStatus::Unchanged
+            }
+            Some(_) => PageChangeStatus::Changed,
+        };
+        if change_status == PageChangeStatus::Unchanged {
+            reused_pages += 1;
+        }
         let metadata_path = metadata_path_for(&page_path);
         let metadata = PageMetadata {
-            schema_version: 1,
+            schema_version: 2,
             fetched_at: now_utc_rfc3339(),
             source_name: source.name.clone(),
             snapshot_label: snapshot_label.to_string(),
             source_ref: source_ref.to_string(),
+            page_key: relative.clone(),
             requested_url: git_page_id(repo_url, resolved_ref, &relative),
             final_url: git_page_id(repo_url, resolved_ref, &relative),
             fetch_method: "git_checkout".to_string(),
@@ -213,26 +235,66 @@ fn snapshot_git_pages(
             status_code: 200,
             byte_size: bytes.len() as u64,
             sha256: sha256.clone(),
+            raw_sha256: Some(sha256.clone()),
+            etag: None,
+            last_modified: None,
             x_markdown_tokens: None,
             x_original_tokens: None,
             content_signal: None,
             page_path: page_path.clone(),
             raw_path: raw_path.clone(),
+            rendered_raw_path: None,
         };
         write_json(&metadata_path, &metadata)?;
 
         pages.push(PageManifestEntry {
+            page_key: relative.clone(),
             url: git_page_id(repo_url, resolved_ref, &relative),
             final_url: git_page_id(repo_url, resolved_ref, &relative),
             fetch_method: "git_checkout".to_string(),
             status: "stored".to_string(),
+            change_status,
+            reused_from_snapshot: previous_snapshot_label
+                .filter(|_| change_status == PageChangeStatus::Unchanged)
+                .map(ToOwned::to_owned),
             page_path: Some(page_path),
             metadata_path: Some(metadata_path),
-            raw_path,
+            raw_path: Some(raw_path),
+            rendered_raw_path: None,
             content_type: Some(content_type_for(file_path)),
             sha256: Some(sha256),
+            raw_sha256: Some(bytes_hash_for_raw(&bytes)),
+            etag: None,
+            last_modified: None,
             byte_size: bytes.len() as u64,
         });
+    }
+
+    if let Some(previous_pages) = previous_pages {
+        for previous in previous_pages.values() {
+            if !seen_keys.contains(&previous.page_key) {
+                seen_keys.insert(previous.page_key.clone());
+                pages.push(PageManifestEntry {
+                    page_key: previous.page_key.clone(),
+                    url: String::new(),
+                    final_url: String::new(),
+                    fetch_method: previous.fetch_method.clone(),
+                    status: "removed".to_string(),
+                    change_status: PageChangeStatus::Removed,
+                    reused_from_snapshot: Some(previous.snapshot_label.clone()),
+                    page_path: None,
+                    metadata_path: None,
+                    raw_path: None,
+                    rendered_raw_path: None,
+                    content_type: previous.content_type.clone(),
+                    sha256: previous.content_hash.clone(),
+                    raw_sha256: previous.raw_hash.clone(),
+                    etag: None,
+                    last_modified: None,
+                    byte_size: 0,
+                });
+            }
+        }
     }
 
     Ok((
@@ -240,10 +302,15 @@ fn snapshot_git_pages(
             attempted: markdown_files.len(),
             stored_pages: markdown_files.len(),
             skipped_pages: 0,
+            reused_pages,
             method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
         },
         pages,
     ))
+}
+
+fn bytes_hash_for_raw(bytes: &[u8]) -> String {
+    sha256_hex(bytes)
 }
 
 fn detect_docs_root(repo_root: &Path, configured: Option<&str>) -> Result<PathBuf> {
@@ -450,6 +517,7 @@ fn run_git_capture(cwd: Option<&Path>, args: &[&str]) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::Command;
@@ -457,7 +525,8 @@ mod tests {
 
     use anyhow::Result;
 
-    use super::{detect_docs_root, find_nav_manifests, relative_to, sync_git_source};
+    use super::{detect_docs_root, find_nav_manifests, relative_to, sha256_hex, sync_git_source};
+    use crate::incremental::PreviousPageState;
     use crate::models::{SourceDefinition, SourceKind, VersionStrategy};
 
     #[test]
@@ -500,6 +569,7 @@ mod tests {
             name: "fixture".to_string(),
             entry_url: "https://example.com/docs".to_string(),
             proxy_url: None,
+            browser_cmd: None,
             source_kind: SourceKind::GitDocs,
             repo_url: Some(repo.path.to_string_lossy().to_string()),
             docs_path: None,
@@ -510,7 +580,7 @@ mod tests {
             updated_at: "2026-03-09T00:00:00Z".to_string(),
         };
 
-        let outcome = sync_git_source(&snapshot, &source, "main", "main", true, None)?;
+        let outcome = sync_git_source(&snapshot, &source, "main", "main", true, None, None, None)?;
         assert_eq!(outcome.git.docs_path, "docs");
         assert!(outcome.git.detected_docs_path);
         assert_eq!(outcome.fetch.stored_pages, 2);
@@ -537,6 +607,7 @@ mod tests {
             name: "fixture".to_string(),
             entry_url: "https://example.com/docs".to_string(),
             proxy_url: None,
+            browser_cmd: None,
             source_kind: SourceKind::GitDocs,
             repo_url: Some(repo.path.to_string_lossy().to_string()),
             docs_path: Some("docs".to_string()),
@@ -547,12 +618,115 @@ mod tests {
             updated_at: "2026-03-09T00:00:00Z".to_string(),
         };
 
-        let outcome =
-            sync_git_source(&snapshot, &source, &repo.first_commit, "commit", true, None)?;
+        let outcome = sync_git_source(
+            &snapshot,
+            &source,
+            &repo.first_commit,
+            "commit",
+            true,
+            None,
+            None,
+            None,
+        )?;
         assert_eq!(outcome.git.resolved_ref, repo.first_commit);
         assert_eq!(outcome.fetch.stored_pages, 1);
         assert!(snapshot.join("pages/guide/intro.md").exists());
         assert!(!snapshot.join("pages/api/reference.mdx").exists());
+
+        fs::remove_dir_all(snapshot)?;
+        fs::remove_dir_all(repo.path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn marks_git_pages_as_changed_unchanged_and_removed() -> Result<()> {
+        let repo = init_repo_fixture()?;
+        let snapshot = make_temp_dir("snapshot-diff");
+        let source = SourceDefinition {
+            name: "fixture".to_string(),
+            entry_url: "https://example.com/docs".to_string(),
+            proxy_url: None,
+            browser_cmd: None,
+            source_kind: SourceKind::GitDocs,
+            repo_url: Some(repo.path.to_string_lossy().to_string()),
+            docs_path: Some("docs".to_string()),
+            default_ref: Some("main".to_string()),
+            version_strategy: VersionStrategy::GitRef,
+            tags: vec![],
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            updated_at: "2026-03-09T00:00:00Z".to_string(),
+        };
+
+        let previous_pages = BTreeMap::from([
+            (
+                "guide/intro.md".to_string(),
+                PreviousPageState {
+                    snapshot_label: "prev".to_string(),
+                    page_key: "guide/intro.md".to_string(),
+                    content_hash: Some(sha256_hex(b"# Intro\n")),
+                    raw_hash: Some(sha256_hex(b"# Intro\n")),
+                    fetch_method: "git_checkout".to_string(),
+                    page_path: None,
+                    raw_path: None,
+                    rendered_raw_path: None,
+                    content_type: Some("text/markdown".to_string()),
+                    etag: None,
+                    last_modified: None,
+                },
+            ),
+            (
+                "guide/removed.md".to_string(),
+                PreviousPageState {
+                    snapshot_label: "prev".to_string(),
+                    page_key: "guide/removed.md".to_string(),
+                    content_hash: Some("deadbeef".to_string()),
+                    raw_hash: Some("deadbeef".to_string()),
+                    fetch_method: "git_checkout".to_string(),
+                    page_path: None,
+                    raw_path: None,
+                    rendered_raw_path: None,
+                    content_type: Some("text/markdown".to_string()),
+                    etag: None,
+                    last_modified: None,
+                },
+            ),
+        ]);
+
+        let outcome = sync_git_source(
+            &snapshot,
+            &source,
+            "main",
+            "main",
+            true,
+            Some("prev"),
+            Some(&previous_pages),
+            None,
+        )?;
+        let intro = outcome
+            .pages
+            .iter()
+            .find(|page| page.page_key == "guide/intro.md")
+            .expect("intro page");
+        let api = outcome
+            .pages
+            .iter()
+            .find(|page| page.page_key == "api/reference.mdx")
+            .expect("api page");
+        let removed = outcome
+            .pages
+            .iter()
+            .find(|page| page.page_key == "guide/removed.md")
+            .expect("removed page");
+
+        assert_eq!(
+            intro.change_status,
+            crate::models::PageChangeStatus::Unchanged
+        );
+        assert_eq!(api.change_status, crate::models::PageChangeStatus::New);
+        assert_eq!(
+            removed.change_status,
+            crate::models::PageChangeStatus::Removed
+        );
 
         fs::remove_dir_all(snapshot)?;
         fs::remove_dir_all(repo.path)?;

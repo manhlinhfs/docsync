@@ -21,6 +21,7 @@ pub fn add_source(
         name: new_source.name.clone(),
         entry_url: entry_url.to_string(),
         proxy_url: new_source.proxy_url,
+        browser_cmd: new_source.browser_cmd,
         source_kind: new_source.source_kind,
         repo_url: new_source.repo_url,
         docs_path: new_source.docs_path,

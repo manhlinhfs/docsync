@@ -30,6 +30,7 @@ User registers a source with:
 This data lives in `config.json`.
 
 The entry URL is intentionally generic. It may be a docs homepage, a single page, `llms.txt`, `sitemap.xml`, a markdown file, or another directly importable asset.
+Browser fallback can be configured globally or per source for dynamic sites.
 
 ### 2. Capability probe
 
@@ -47,7 +48,7 @@ This is intentionally early because it prevents expensive and brittle fetch deci
 
 ### 3. Discovery
 
-Discovery will eventually build a page frontier from:
+Discovery builds a page frontier from:
 
 - repo docs trees
 - `llms.txt`
@@ -68,14 +69,16 @@ Fetch strategy order:
 4. raw HTML normalization
 5. headless browser fallback
 
-Current implementation reaches steps 1 and 2:
+Current implementation reaches all five steps:
 
 - for `git-docs` sources, clone the repo, resolve the requested ref, detect the docs root, and copy markdown files directly
 - fetch pages with `Accept: text/markdown`
 - fall back to HTML-to-Markdown conversion when direct markdown is unavailable
+- invoke a headless browser fallback when static HTML extraction is too thin for JS-heavy pages
 - store markdown bodies under `pages/`
 - archive raw response bodies under `raw/`
 - write per-page metadata JSON sidecars with response headers and hashes
+- reuse validator-backed pages from previous snapshots when possible
 
 ### 5. Snapshot write
 
@@ -96,19 +99,16 @@ Current discovery snapshots record:
 - deduped URL frontier
 - llms and sitemap provenance
 - optional git summary with resolved ref, docs path, and nav manifests
-- fetch summary with stored/skipped counts
-- per-page fetch method and content hashes
+- fetch summary with stored/skipped/reused counts
+- diff summary with `new`, `changed`, `unchanged`, and `removed`
+- per-page fetch method, content hashes, validator headers, and optional reused-from metadata
 - optional OmniMem import and verify logs per snapshot
-
-Future versions will add:
-
-- diff state
 
 ## Runtime files
 
 ### `config.json`
 
-Stores source registry and runtime schema version.
+Stores source registry, proxy/browser defaults, and runtime schema version.
 
 ### `manifest.json`
 

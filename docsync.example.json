@@ -1,13 +1,15 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "created_at": "2026-03-07T00:00:00+00:00",
   "updated_at": "2026-03-07T00:00:00+00:00",
   "default_proxy_url": "http://127.0.0.1:7890",
+  "default_browser_cmd": "/usr/bin/chromium",
   "sources": {
     "postiz": {
       "name": "postiz",
       "entry_url": "https://docs.postiz.com/",
       "proxy_url": null,
+      "browser_cmd": null,
       "source_kind": "website",
       "repo_url": null,
       "docs_path": null,

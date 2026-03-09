@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::models::{SourceKind, VersionStrategy};
 
@@ -17,6 +17,9 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub proxy: Option<String>,
 
+    #[arg(long, global = true)]
+    pub browser_cmd: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -25,6 +28,8 @@ pub struct Cli {
 pub enum Commands {
     Init(InitArgs),
     Paths(PathsArgs),
+    Completions(CompletionsArgs),
+    Migrate(MigrateArgs),
     Probe(ProbeArgs),
     Import(ImportArgs),
     Source {
@@ -72,6 +77,31 @@ pub struct ImportArgs {
     pub dry_run: bool,
 
     #[arg(long)]
+    pub all_pages: bool,
+
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    #[value(name = "powershell")]
+    Powershell,
+    Zsh,
+}
+
+#[derive(Debug, Args)]
+pub struct CompletionsArgs {
+    #[arg(value_enum)]
+    pub shell: CompletionShell,
+}
+
+#[derive(Debug, Args)]
+pub struct MigrateArgs {
+    #[arg(long)]
     pub json: bool,
 }
 
@@ -91,6 +121,9 @@ pub struct SourceAddArgs {
 
     #[arg(long)]
     pub proxy: Option<String>,
+
+    #[arg(long)]
+    pub browser_cmd: Option<String>,
 
     #[arg(long, value_enum, default_value_t = SourceKind::Auto)]
     pub kind: SourceKind,
