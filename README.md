@@ -24,6 +24,8 @@ It works well for:
 
 Current stable version: **`1.1.0`**
 
+Planned milestones after `v1.1.0`: see [ROADMAP.md](ROADMAP.md).
+
 ## **Quick Start**
 
 ### **1. Initialize local state**

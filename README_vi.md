@@ -24,6 +24,8 @@ Phù hợp nhất với:
 
 Phiên bản stable hiện tại: **`1.1.0`**
 
+Các mốc phát triển tiếp theo sau `v1.1.0`: xem [ROADMAP.md](ROADMAP.md).
+
 ## **Bắt Đầu Nhanh**
 
 ### **1. Khởi tạo thư mục runtime**

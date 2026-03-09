@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap is version-first, not date-first. `docsync` has now completed the planned path through `v1.0.0`.
+This roadmap is version-first, not date-first. `docsync` is currently stable at `v1.1.0`.
 
 ## Release themes
 
@@ -173,10 +173,103 @@ Exit criteria:
 - manifests are backward-compatible or migratable
 - release notes communicate upgrade guarantees
 
-## Backlog after `v1.0.0`
+## Milestones after `v1.1.0`
+
+Development after `v1.1.0` should move in milestone order unless a regression, release blocker, or security issue needs to interrupt the sequence.
+
+### `v1.2.0` Multi-Engine Normalization
+
+Status: planned
+
+Scope:
+
+- add targeted cleanup profiles for Mintlify, Docusaurus, Nextra, MkDocs, VitePress, and GitBook
+- improve boilerplate stripping for repeated nav chrome, page index banners, and duplicated headings
+- normalize common callout, tab, step, card, and accordion patterns without dropping important content
+- improve canonical page selection when multiple URLs normalize to the same page body
+- add real-site smoke coverage for at least one site per supported docs engine
+
+Exit criteria:
+
+- common docs engines produce cleaner Markdown with materially fewer UI artifacts
+- canonical page selection is stable across repeated syncs
+- the smoke matrix passes on supported real-world docs sites
+
+### `v1.3.0` Quality Scoring and Import Policy
+
+Status: planned
+
+Scope:
+
+- score each page for residual HTML/MDX noise, text density, title quality, and boilerplate ratio
+- record page quality signals in snapshot metadata and sidecars
+- add import policy rules for low-signal pages, empty pages, and duplicate groups
+- keep the best canonical page when duplicate content appears at multiple URLs
+- expose quality summary counters in `manifest.json`
+
+Exit criteria:
+
+- each snapshot reports page-quality metrics in a way that is easy to audit
+- low-signal pages can be filtered before OmniMem import
+- duplicate groups keep the best canonical page consistently
+
+### `v1.4.0` Section-Aware Chunking
+
+Status: planned
+
+Scope:
+
+- split normalized pages by heading structure instead of page-only import
+- keep code blocks close to the nearest explanatory section
+- preserve section path metadata for each chunk
+- expose configurable chunk size and overlap limits without breaking stable defaults
+- support changed-only chunk import for incremental snapshots
+
+Exit criteria:
+
+- imported chunks map cleanly to page sections
+- retrieval quality improves over page-level import on representative test queries
+- chunk metadata remains stable enough for incremental sync and re-import
+
+### `v1.5.0` Structured Asset Adapters
+
+Status: planned
+
+Scope:
+
+- add adapters for `openapi.json`, JSON schema, and similar structured docs assets
+- add a practical PDF ingestion path for text-heavy reference PDFs
+- attach asset-derived metadata to generated Markdown output
+- support source-level rules for including or excluding structured assets
+- keep unsupported binary assets out of the main import path by default
+
+Exit criteria:
+
+- structured docs assets can be converted into import-ready Markdown with traceable provenance
+- unsupported asset types fail clearly without breaking the rest of the sync
+- asset handling is configurable per source
+
+### `v1.6.0` Continuous Validation
+
+Status: planned
+
+Scope:
+
+- build a maintained smoke suite against real docs sites such as OpenClaw, shadcn/ui, Supabase, and representative engine-specific sites
+- add snapshot quality regression checks to CI
+- add a `doctor`-style runtime check for Git, browser, OmniMem, proxy, and headless prerequisites
+- document the support matrix by docs engine and ingestion path
+- tighten release gates so a stable release requires clean CI plus passing smoke coverage
+
+Exit criteria:
+
+- stable releases are gated by CI and real-site smoke checks
+- users can diagnose local runtime problems quickly
+- the supported and partially supported docs-engine matrix is explicit
+
+## Longer-Term Backlog
 
 - distributed worker mode
 - pluggable extraction providers
-- OpenAPI/schema-aware enrichment
 - asset downloads and attachment rewriting
 - remote registry of community source adapters
