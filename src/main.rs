@@ -1,3 +1,4 @@
+mod chunking;
 mod cli;
 mod config;
 mod dashboard;
@@ -25,6 +26,7 @@ use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
 use serde::Serialize;
 
+use crate::chunking::ChunkingConfig;
 use crate::cli::{Cli, Commands, CompletionShell, NotifyCommands, SourceCommands};
 use crate::config::{ensure_layout, load_config, resolve_paths};
 use crate::dashboard::{
@@ -201,6 +203,7 @@ fn run() -> Result<()> {
                     println!("Source: {}", result.source_name);
                     println!("Snapshot: {}", result.snapshot_label);
                     println!("Pages shown: {}", result.pages_shown);
+                    println!("Chunks: {}", result.chunk_count);
                     println!("High quality pages: {}", result.high_quality_pages);
                     println!("Medium quality pages: {}", result.medium_quality_pages);
                     println!("Low quality pages: {}", result.low_quality_pages);
@@ -305,6 +308,9 @@ fn run() -> Result<()> {
                 println!("Selected pages: {}", result.selected_pages);
                 println!("Imported pages: {}", result.imported_pages);
                 println!("Failed pages: {}", result.failed_pages);
+                println!("Selected chunks: {}", result.selected_chunks);
+                println!("Imported chunks: {}", result.imported_chunks);
+                println!("Failed chunks: {}", result.failed_chunks);
                 println!(
                     "Skipped unchanged pages: {}",
                     result.skipped_unchanged_pages
@@ -480,6 +486,14 @@ fn run() -> Result<()> {
                 args.omnimem_cmd,
                 args.omnimem_direct,
                 args.omnimem_include_low_signal,
+                ChunkingConfig {
+                    target_words: args
+                        .chunk_target_words
+                        .unwrap_or(ChunkingConfig::default().target_words),
+                    overlap_words: args
+                        .chunk_overlap_words
+                        .unwrap_or(ChunkingConfig::default().overlap_words),
+                },
             )?;
             if args.json {
                 print_json(&result)?;
@@ -496,6 +510,7 @@ fn run() -> Result<()> {
                 println!("Changed/new pages: {}", result.changed_pages);
                 println!("Unchanged pages: {}", result.unchanged_pages);
                 println!("Removed pages: {}", result.removed_pages);
+                println!("Chunks: {}", result.chunk_count);
                 if let Some(previous_snapshot_label) = result.previous_snapshot_label.as_deref() {
                     println!("Previous snapshot: {previous_snapshot_label}");
                 }
@@ -512,6 +527,7 @@ fn run() -> Result<()> {
                     println!("Auto import: true");
                     println!("Imported pages: {}", import_result.imported_pages);
                     println!("Failed imports: {}", import_result.failed_pages);
+                    println!("Imported chunks: {}", import_result.imported_chunks);
                     println!("OmniMem summary: {}", import_result.summary_path.display());
                 } else {
                     println!("Auto import: false");

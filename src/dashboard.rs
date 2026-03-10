@@ -19,6 +19,7 @@ pub struct DashboardResult {
     pub snapshot_label: String,
     pub output_path: PathBuf,
     pub pages_shown: usize,
+    pub chunk_count: usize,
     pub high_quality_pages: usize,
     pub medium_quality_pages: usize,
     pub low_quality_pages: usize,
@@ -108,6 +109,12 @@ pub fn build_dashboard(
         snapshot_label: manifest.snapshot_label,
         output_path,
         pages_shown,
+        chunk_count: manifest
+            .fetch
+            .as_ref()
+            .and_then(|summary| summary.chunking.as_ref())
+            .map(|value| value.chunk_count)
+            .unwrap_or(0),
         high_quality_pages,
         medium_quality_pages,
         low_quality_pages,
@@ -151,6 +158,7 @@ pub fn build_global_dashboard(
         snapshot_label: "global".to_string(),
         output_path,
         pages_shown,
+        chunk_count: 0,
         high_quality_pages,
         medium_quality_pages,
         low_quality_pages,
@@ -600,6 +608,10 @@ fn latest_snapshot_dir(source_dir: &Path) -> Result<PathBuf> {
 fn render_dashboard_html(manifest: &SnapshotManifest) -> String {
     let fetch = manifest.fetch.as_ref();
     let quality = fetch.and_then(|summary| summary.quality.as_ref());
+    let chunk_count = fetch
+        .and_then(|summary| summary.chunking.as_ref())
+        .map(|value| value.chunk_count)
+        .unwrap_or(0);
     let rows = manifest
         .pages
         .iter()
@@ -784,6 +796,7 @@ fn render_dashboard_html(manifest: &SnapshotManifest) -> String {
       <p>Snapshot <span class="mono">{snapshot_label}</span> with live quality scoring, incremental state, and page-level audit data. This report is generated locally from <span class="mono">manifest.json</span>.</p>
       <div class="stats">
         <div class="card"><div class="label">Stored Pages</div><div class="value">{stored_pages}</div><div class="sub">Snapshot pages written under <span class="mono">pages/</span></div></div>
+        <div class="card"><div class="label">Chunks</div><div class="value">{chunk_count}</div><div class="sub">Section-aware artifacts written under <span class="mono">chunks/</span></div></div>
         <div class="card"><div class="label">Changed Or New</div><div class="value">{changed_pages}</div><div class="sub">Diff candidates for import</div></div>
         <div class="card"><div class="label">High Quality</div><div class="value">{high_quality_pages}</div><div class="sub">Strong import-ready content</div></div>
         <div class="card"><div class="label">Medium Quality</div><div class="value">{medium_quality_pages}</div><div class="sub">Review if output matters</div></div>
@@ -830,6 +843,7 @@ fn render_dashboard_html(manifest: &SnapshotManifest) -> String {
         source_name = escape_html(&manifest.source_name),
         snapshot_label = escape_html(&manifest.snapshot_label),
         stored_pages = fetch.map(|summary| summary.stored_pages).unwrap_or(0),
+        chunk_count = chunk_count,
         changed_pages = manifest
             .diff
             .as_ref()
@@ -1273,6 +1287,7 @@ mod tests {
                     missing_title_pages: 0,
                     residual_markup_pages: 0,
                 }),
+                chunking: None,
                 method_counts: std::collections::BTreeMap::new(),
             }),
             diff: None,
@@ -1310,6 +1325,7 @@ mod tests {
                     text_density: 0.8,
                     low_signal_reasons: Vec::new(),
                 }),
+                chunks: Vec::new(),
             }],
             notes: Vec::new(),
         };
@@ -1399,6 +1415,7 @@ mod tests {
                     missing_title_pages: 0,
                     residual_markup_pages: 0,
                 }),
+                chunking: None,
                 method_counts: std::collections::BTreeMap::new(),
             }),
             diff: Some(crate::models::DiffSummary {
@@ -1443,6 +1460,7 @@ mod tests {
                     text_density: 0.8,
                     low_signal_reasons: Vec::new(),
                 }),
+                chunks: Vec::new(),
             }],
             notes: Vec::new(),
         };

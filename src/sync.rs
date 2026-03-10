@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
+use crate::chunking::ChunkingConfig;
 use crate::config::AppPaths;
 use crate::discovery::discover_source;
 use crate::fetch::fetch_snapshot_pages;
@@ -34,6 +35,7 @@ pub struct SyncResult {
     pub changed_pages: usize,
     pub unchanged_pages: usize,
     pub removed_pages: usize,
+    pub chunk_count: usize,
     pub strategy_summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub import: Option<ImportResult>,
@@ -51,6 +53,7 @@ pub fn sync_source(
     cli_omnimem_cmd: Option<String>,
     cli_omnimem_direct: bool,
     cli_omnimem_include_low_signal: bool,
+    chunking: ChunkingConfig,
 ) -> Result<SyncResult> {
     let source = config
         .sources
@@ -91,6 +94,7 @@ pub fn sync_source(
             cli_omnimem_cmd,
             cli_omnimem_direct,
             cli_omnimem_include_low_signal,
+            chunking,
         ),
         _ => sync_http_mode(
             source,
@@ -111,6 +115,7 @@ pub fn sync_source(
             cli_omnimem_cmd,
             cli_omnimem_direct,
             cli_omnimem_include_low_signal,
+            chunking,
         ),
     }
 }
@@ -134,6 +139,7 @@ fn sync_http_mode(
     cli_omnimem_cmd: Option<String>,
     cli_omnimem_direct: bool,
     cli_omnimem_include_low_signal: bool,
+    chunking: ChunkingConfig,
 ) -> Result<SyncResult> {
     let discovery = discover_source(&source.entry_url, &source.name, raw_label, proxy_url)?;
     let discovery_summary = discovery.summary(discovery_manifest_path.clone());
@@ -152,6 +158,7 @@ fn sync_http_mode(
     let mut skipped_pages = 0usize;
     let mut reused_pages = 0usize;
     let mut diff = diff_summary_from_pages(&[], previous_snapshot_label);
+    let mut chunk_count = 0usize;
     let mut import = None;
 
     if !dry_run {
@@ -176,10 +183,17 @@ fn sync_http_mode(
             previous_page_index,
             proxy_url,
             browser_cmd,
+            chunking,
         )?;
         fetched_pages = fetch_outcome.summary.stored_pages;
         skipped_pages = fetch_outcome.summary.skipped_pages;
         reused_pages = fetch_outcome.summary.reused_pages;
+        chunk_count = fetch_outcome
+            .summary
+            .chunking
+            .as_ref()
+            .map(|value| value.chunk_count)
+            .unwrap_or(0);
         diff = diff_summary_from_pages(&fetch_outcome.pages, previous_snapshot_label);
 
         let manifest = SnapshotManifest {
@@ -256,6 +270,7 @@ fn sync_http_mode(
         changed_pages: diff.changed_pages + diff.new_pages,
         unchanged_pages: diff.unchanged_pages,
         removed_pages: diff.removed_pages,
+        chunk_count,
         strategy_summary,
         import,
     })
@@ -279,6 +294,7 @@ fn sync_git_mode(
     cli_omnimem_cmd: Option<String>,
     cli_omnimem_direct: bool,
     cli_omnimem_include_low_signal: bool,
+    chunking: ChunkingConfig,
 ) -> Result<SyncResult> {
     if !dry_run {
         ensure_directory(snapshot_dir)?;
@@ -295,6 +311,7 @@ fn sync_git_mode(
         previous_snapshot_label,
         previous_page_index,
         proxy_url,
+        chunking,
     )?;
     let discovery_summary = outcome.discovery.summary(discovery_manifest_path.clone());
     let diff = diff_summary_from_pages(&outcome.pages, previous_snapshot_label);
@@ -363,6 +380,16 @@ fn sync_git_mode(
             cli_omnimem_include_low_signal,
         )?
     };
+    let chunk_count = if dry_run {
+        0
+    } else {
+        outcome
+            .fetch
+            .chunking
+            .as_ref()
+            .map(|value| value.chunk_count)
+            .unwrap_or(0)
+    };
 
     Ok(SyncResult {
         source_name: source.name.clone(),
@@ -392,6 +419,7 @@ fn sync_git_mode(
         changed_pages: diff.changed_pages + diff.new_pages,
         unchanged_pages: diff.unchanged_pages,
         removed_pages: diff.removed_pages,
+        chunk_count,
         strategy_summary,
         import,
     })
@@ -563,6 +591,7 @@ mod tests {
                 byte_size: 8,
                 normalization: None,
                 quality: None,
+                chunks: Vec::new(),
             }],
             notes: Vec::new(),
         };

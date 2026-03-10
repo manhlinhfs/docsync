@@ -182,6 +182,8 @@ pub struct FetchSummary {
     pub normalization_changed_pages: usize,
     #[serde(default)]
     pub quality: Option<QualitySummary>,
+    #[serde(default)]
+    pub chunking: Option<ChunkingSummary>,
     pub method_counts: BTreeMap<String, usize>,
 }
 
@@ -237,6 +239,32 @@ pub struct PageManifestEntry {
     pub normalization: Option<NormalizationSummary>,
     #[serde(default)]
     pub quality: Option<PageQualitySummary>,
+    #[serde(default)]
+    pub chunks: Vec<ChunkManifestEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkManifestEntry {
+    pub chunk_id: String,
+    pub page_key: String,
+    pub ordinal: usize,
+    #[serde(default)]
+    pub heading: Option<String>,
+    #[serde(default)]
+    pub section_path: Vec<String>,
+    pub chunk_path: PathBuf,
+    pub sha256: String,
+    pub byte_size: u64,
+    pub word_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkingSummary {
+    pub chunk_count: usize,
+    pub chunked_pages: usize,
+    pub average_chunks_per_page: f32,
+    pub target_words: usize,
+    pub overlap_words: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Eq, PartialEq)]

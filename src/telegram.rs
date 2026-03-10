@@ -211,6 +211,7 @@ mod tests {
                     missing_title_pages: 1,
                     residual_markup_pages: 3,
                 }),
+                chunking: None,
                 method_counts: std::collections::BTreeMap::new(),
             }),
             diff: Some(crate::models::DiffSummary {

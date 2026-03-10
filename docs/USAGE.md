@@ -127,6 +127,7 @@ docsync sync postiz-llms --dry-run --json
 docsync sync postiz-page
 docsync sync supabase --ref master
 docsync sync openclaw --import
+docsync sync openclaw --chunk-target-words 180 --chunk-overlap-words 30
 ```
 
 When a previous snapshot exists, `docsync sync` reports:
@@ -148,6 +149,7 @@ docsync import supabase --ref master --include-low-signal
 Incremental snapshots import only `new` and `changed` pages by default.
 Duplicate normalized pages inside the same snapshot are skipped by default during import.
 Low-signal pages are also skipped by default unless you pass `--include-low-signal`.
+When chunk metadata exists, `docsync import` prefers files under `chunks/` instead of full page files under `pages/`.
 
 ## Enable automatic OmniMem import after sync
 
@@ -213,4 +215,4 @@ docsync migrate --json
 
 ## Notes
 
-`v1.3.4` keeps the `v1.3.x` quality scoring, low-signal filtering, local dashboard, Telegram summary, and global dashboard features, and adds source-level or one-shot automatic OmniMem import after sync.
+`v1.4.0` keeps the `v1.3.x` quality scoring, low-signal filtering, local dashboard, Telegram summary, and automatic OmniMem import features, and adds section-aware chunk generation plus chunk-first OmniMem import.

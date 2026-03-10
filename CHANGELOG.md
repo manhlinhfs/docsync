@@ -1,5 +1,20 @@
 # Changelog
 
+## `1.4.0` - 2026-03-10
+
+Added:
+
+- section-aware chunk generation under `chunks/` for normalized website and git-docs snapshots
+- per-page chunk metadata with stable section paths and chunk file paths
+- configurable chunk sizing on `sync` via `--chunk-target-words` and `--chunk-overlap-words`
+- chunk counters in `sync`, `import`, and dashboard output
+- regression tests for chunk splitting and chunk-first import flows
+
+Changed:
+
+- `docsync import` now prefers section chunks over full page files when chunk metadata is available
+- automatic OmniMem import after `sync` now imports chunk files by default on chunked snapshots
+
 ## `1.3.4` - 2026-03-09
 
 Added:

@@ -13,6 +13,7 @@ Với một công cụ duy nhất, bạn có thể:
 - **Làm sạch** Markdown/MDX trước khi hash hoặc import
 - **Theo dõi thay đổi** giữa các snapshot
 - **Import** chỉ những trang mới hoặc đã thay đổi vào OmniMem
+- **Chunk** tài liệu đã normalize thành các section Markdown nhỏ hơn
 - **Xem lại dữ liệu** bằng dashboard local trên trình duyệt
 - **Gửi thông báo** tóm tắt sang Telegram bot
 
@@ -24,9 +25,9 @@ Phù hợp nhất với:
 - **Docs render bằng JS** với headless fallback
 - **Docs lấy từ repo Git**
 
-Phiên bản stable hiện tại: **`1.3.4`**
+Phiên bản stable hiện tại: **`1.4.0`**
 
-Các mốc phát triển tiếp theo sau `v1.3.4`: xem [ROADMAP.md](ROADMAP.md).
+Các mốc phát triển tiếp theo sau `v1.4.0`: xem [ROADMAP.md](ROADMAP.md).
 
 ## **Bắt Đầu Nhanh**
 
@@ -68,6 +69,7 @@ docsync source add openclaw \
 
 ```bash
 docsync sync openclaw --json
+docsync sync openclaw --chunk-target-words 180 --chunk-overlap-words 30
 ```
 
 ### **5. Import vào OmniMem**
@@ -170,6 +172,21 @@ docsync source auto-import drizzle --enable --omnimem-direct
 ```
 
 Sau đó chỉ cần chạy `docsync sync drizzle` là tool sẽ fetch docs rồi import snapshot vào OmniMem ngay.
+
+## **Chunk Theo Từng Section**
+
+`docsync` giờ ghi đồng thời:
+
+- `pages/` cho Markdown sạch theo page
+- `chunks/` cho Markdown đã tách theo section
+
+Nếu snapshot có chunk metadata, khi import vào OmniMem tool sẽ ưu tiên dùng `chunks/`.
+
+Bạn có thể chỉnh kích thước chunk theo từng lần sync:
+
+```bash
+docsync sync drizzle --chunk-target-words 180 --chunk-overlap-words 30
+```
 
 ## **Cách Nghĩ Về `docsync`**
 

@@ -296,6 +296,12 @@ pub struct SyncArgs {
     pub omnimem_include_low_signal: bool,
 
     #[arg(long)]
+    pub chunk_target_words: Option<usize>,
+
+    #[arg(long)]
+    pub chunk_overlap_words: Option<usize>,
+
+    #[arg(long)]
     pub json: bool,
 }
 

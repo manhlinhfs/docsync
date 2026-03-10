@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+use crate::chunking::{ChunkingConfig, summarize_chunks, write_markdown_chunks};
 use crate::incremental::PreviousPageState;
 use crate::models::{
     DiscoveredPage, DiscoveryManifest, DiscoveryOrigin, FetchSummary, GitSummary, PageChangeStatus,
@@ -45,6 +46,7 @@ pub fn sync_git_source(
     previous_snapshot_label: Option<&str>,
     previous_pages: Option<&BTreeMap<String, PreviousPageState>>,
     proxy_url: Option<&str>,
+    chunking: ChunkingConfig,
 ) -> Result<GitSyncOutcome> {
     let repo_url = source.repo_url.clone().with_context(|| {
         format!(
@@ -119,6 +121,7 @@ pub fn sync_git_source(
             &markdown_files,
             previous_snapshot_label,
             previous_pages,
+            chunking,
         )?
     } else {
         (
@@ -130,6 +133,7 @@ pub fn sync_git_source(
                 normalized_pages: 0,
                 normalization_changed_pages: 0,
                 quality: None,
+                chunking: None,
                 method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
             },
             Vec::new(),
@@ -193,16 +197,20 @@ fn snapshot_git_pages(
     markdown_files: &[PathBuf],
     previous_snapshot_label: Option<&str>,
     previous_pages: Option<&BTreeMap<String, PreviousPageState>>,
+    chunking: ChunkingConfig,
 ) -> Result<(FetchSummary, Vec<PageManifestEntry>)> {
     let pages_root = snapshot_dir.join("pages");
+    let chunks_root = snapshot_dir.join("chunks");
     let raw_root = snapshot_dir.join("raw");
     ensure_directory(&pages_root)?;
+    ensure_directory(&chunks_root)?;
     ensure_directory(&raw_root)?;
 
     let mut pages = Vec::new();
     let mut reused_pages = 0usize;
     let mut normalization_changed_pages = 0usize;
     let mut quality_pages = Vec::new();
+    let mut chunk_entries = Vec::new();
     let mut seen_keys = std::collections::BTreeSet::new();
 
     for file_path in markdown_files {
@@ -218,6 +226,18 @@ fn snapshot_git_pages(
         let quality = score_markdown_quality(&normalized.markdown);
         write_bytes(&page_path, normalized.markdown.as_bytes())?;
         let sha256 = sha256_hex(normalized.markdown.as_bytes());
+        let page_url = git_page_id(repo_url, resolved_ref, &relative);
+        let stem = relative
+            .strip_suffix(".md")
+            .or_else(|| relative.strip_suffix(".mdx"))
+            .unwrap_or(&relative);
+        let chunks = write_markdown_chunks(
+            &chunks_root,
+            stem,
+            &relative,
+            &normalized.markdown,
+            chunking,
+        )?;
         let change_status = match previous_pages.and_then(|pages| pages.get(&relative)) {
             None => PageChangeStatus::New,
             Some(previous) if previous.content_hash.as_deref() == Some(sha256.as_str()) => {
@@ -239,8 +259,8 @@ fn snapshot_git_pages(
             snapshot_label: snapshot_label.to_string(),
             source_ref: source_ref.to_string(),
             page_key: relative.clone(),
-            requested_url: git_page_id(repo_url, resolved_ref, &relative),
-            final_url: git_page_id(repo_url, resolved_ref, &relative),
+            requested_url: page_url.clone(),
+            final_url: page_url.clone(),
             fetch_method: "git_checkout".to_string(),
             discovered_from: DiscoveryOrigin::SeedPage,
             content_type: Some(content_type_for(file_path)),
@@ -261,11 +281,12 @@ fn snapshot_git_pages(
         };
         write_json(&metadata_path, &metadata)?;
         quality_pages.push(quality.clone());
+        chunk_entries.extend(chunks.clone());
 
         pages.push(PageManifestEntry {
             page_key: relative.clone(),
-            url: git_page_id(repo_url, resolved_ref, &relative),
-            final_url: git_page_id(repo_url, resolved_ref, &relative),
+            url: page_url.clone(),
+            final_url: page_url,
             fetch_method: "git_checkout".to_string(),
             status: "stored".to_string(),
             change_status,
@@ -284,6 +305,7 @@ fn snapshot_git_pages(
             byte_size: normalized.markdown.len() as u64,
             normalization: Some(normalized.summary),
             quality: Some(quality),
+            chunks,
         });
     }
 
@@ -311,6 +333,7 @@ fn snapshot_git_pages(
                     byte_size: 0,
                     normalization: previous.normalization.clone(),
                     quality: previous.quality.clone(),
+                    chunks: Vec::new(),
                 });
             }
         }
@@ -325,6 +348,7 @@ fn snapshot_git_pages(
             normalized_pages: markdown_files.len(),
             normalization_changed_pages,
             quality: Some(summarize_quality(quality_pages.iter())),
+            chunking: Some(summarize_chunks(&chunk_entries, chunking)),
             method_counts: BTreeMap::from([("git_checkout".to_string(), markdown_files.len())]),
         },
         pages,
@@ -561,6 +585,7 @@ mod tests {
     use anyhow::Result;
 
     use super::{detect_docs_root, find_nav_manifests, relative_to, sha256_hex, sync_git_source};
+    use crate::chunking::ChunkingConfig;
     use crate::incremental::PreviousPageState;
     use crate::models::{SourceDefinition, SourceKind, VersionStrategy};
 
@@ -619,7 +644,17 @@ mod tests {
             updated_at: "2026-03-09T00:00:00Z".to_string(),
         };
 
-        let outcome = sync_git_source(&snapshot, &source, "main", "main", true, None, None, None)?;
+        let outcome = sync_git_source(
+            &snapshot,
+            &source,
+            "main",
+            "main",
+            true,
+            None,
+            None,
+            None,
+            ChunkingConfig::default(),
+        )?;
         assert_eq!(outcome.git.docs_path, "docs");
         assert!(outcome.git.detected_docs_path);
         assert_eq!(outcome.fetch.stored_pages, 2);
@@ -670,6 +705,7 @@ mod tests {
             None,
             None,
             None,
+            ChunkingConfig::default(),
         )?;
         assert_eq!(outcome.git.resolved_ref, repo.first_commit);
         assert_eq!(outcome.fetch.stored_pages, 1);
@@ -721,6 +757,7 @@ mod tests {
                     last_modified: None,
                     normalization: None,
                     quality: None,
+                    chunks: Vec::new(),
                 },
             ),
             (
@@ -739,6 +776,7 @@ mod tests {
                     last_modified: None,
                     normalization: None,
                     quality: None,
+                    chunks: Vec::new(),
                 },
             ),
         ]);
@@ -752,6 +790,7 @@ mod tests {
             Some("prev"),
             Some(&previous_pages),
             None,
+            ChunkingConfig::default(),
         )?;
         let intro = outcome
             .pages

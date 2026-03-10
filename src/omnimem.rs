@@ -21,6 +21,12 @@ pub struct ImportResult {
     pub selected_pages: usize,
     pub imported_pages: usize,
     pub failed_pages: usize,
+    #[serde(default)]
+    pub selected_chunks: usize,
+    #[serde(default)]
+    pub imported_chunks: usize,
+    #[serde(default)]
+    pub failed_chunks: usize,
     pub skipped_unchanged_pages: usize,
     pub skipped_duplicate_pages: usize,
     pub skipped_low_signal_pages: usize,
@@ -51,6 +57,9 @@ struct OmniMemImportSummary {
     selected_pages: usize,
     imported_pages: usize,
     failed_pages: usize,
+    selected_chunks: usize,
+    imported_chunks: usize,
+    failed_chunks: usize,
     skipped_unchanged_pages: usize,
     skipped_duplicate_pages: usize,
     skipped_low_signal_pages: usize,
@@ -119,6 +128,7 @@ pub fn import_snapshot(
         })
         .count();
     let mut selected_pages = 0usize;
+    let mut selected_chunks = 0usize;
     let mut skipped_duplicate_pages = 0usize;
     let mut skipped_low_signal_pages = 0usize;
     let mut importable_pages = Vec::new();
@@ -187,47 +197,77 @@ pub fn import_snapshot(
             continue;
         }
         selected_pages += 1;
-        importable_pages.push(page_path);
+        let artifacts = if page.chunks.is_empty() {
+            vec![ImportArtifact {
+                path: page_path.clone(),
+            }]
+        } else {
+            selected_chunks += page.chunks.len();
+            page.chunks
+                .iter()
+                .map(|chunk| ImportArtifact {
+                    path: chunk.chunk_path.clone(),
+                })
+                .collect()
+        };
+        importable_pages.push(ImportablePage { artifacts });
     }
     let mut imported_pages = 0usize;
     let mut failed_pages = 0usize;
+    let mut imported_chunks = 0usize;
+    let mut failed_chunks = 0usize;
 
-    for page_path in &importable_pages {
+    for page in &importable_pages {
         if dry_run {
-            items.push(OmniMemImportItem {
-                page_path: page_path.display().to_string(),
-                status: "planned".to_string(),
-                exit_code: None,
-                stdout: String::new(),
-                stderr: String::new(),
-            });
+            for artifact in &page.artifacts {
+                items.push(OmniMemImportItem {
+                    page_path: artifact.path.display().to_string(),
+                    status: "planned".to_string(),
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                });
+            }
             continue;
         }
 
-        let output = run_omnimem(
-            &omnimem_cmd,
-            &build_import_args(&page_path, direct)
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-        )?;
-        let success = output.status.success();
-        if success {
-            imported_pages += 1;
-        } else {
-            failed_pages += 1;
+        let mut page_failed = false;
+        for artifact in &page.artifacts {
+            let output = run_omnimem(
+                &omnimem_cmd,
+                &build_import_args(&artifact.path, direct)
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            )?;
+            let success = output.status.success();
+            if page.artifacts.len() > 1 {
+                if success {
+                    imported_chunks += 1;
+                } else {
+                    failed_chunks += 1;
+                }
+            }
+            if !success {
+                page_failed = true;
+            }
+            items.push(OmniMemImportItem {
+                page_path: artifact.path.display().to_string(),
+                status: if success {
+                    "imported".to_string()
+                } else {
+                    "failed".to_string()
+                },
+                exit_code: output.status.code(),
+                stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            });
         }
-        items.push(OmniMemImportItem {
-            page_path: page_path.display().to_string(),
-            status: if success {
-                "imported".to_string()
-            } else {
-                "failed".to_string()
-            },
-            exit_code: output.status.code(),
-            stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        });
+        if page_failed {
+            failed_pages += 1;
+        } else {
+            imported_pages += 1;
+        }
     }
 
     let summary = OmniMemImportSummary {
@@ -241,6 +281,9 @@ pub fn import_snapshot(
         selected_pages,
         imported_pages,
         failed_pages,
+        selected_chunks,
+        imported_chunks,
+        failed_chunks,
         skipped_unchanged_pages,
         skipped_duplicate_pages,
         skipped_low_signal_pages,
@@ -254,6 +297,9 @@ pub fn import_snapshot(
         selected_pages,
         imported_pages,
         failed_pages,
+        selected_chunks,
+        imported_chunks,
+        failed_chunks,
         skipped_unchanged_pages,
         skipped_duplicate_pages,
         skipped_low_signal_pages,
@@ -261,6 +307,16 @@ pub fn import_snapshot(
         omnimem_cmd,
         dry_run,
     })
+}
+
+#[derive(Debug, Clone)]
+struct ImportArtifact {
+    path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct ImportablePage {
+    artifacts: Vec<ImportArtifact>,
 }
 
 pub fn verify_snapshot(
@@ -891,6 +947,7 @@ mod tests {
                     byte_size: 8,
                     normalization: None,
                     quality: None,
+                    chunks: Vec::new(),
                 })
                 .collect(),
             notes: Vec::new(),
@@ -926,6 +983,7 @@ mod tests {
             byte_size: 8,
             normalization: None,
             quality: None,
+            chunks: Vec::new(),
         }
     }
 

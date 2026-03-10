@@ -13,6 +13,7 @@
 - **Нормализовать** Markdown/MDX перед hash и import
 - **Отслеживать изменения** между snapshot'ами
 - **Импортировать** в OmniMem только новые или изменённые страницы
+- **Разбивать** нормализованные docs на section-aware Markdown chunks
 - **Просматривать** собранные данные через локальный dashboard
 - **Отправлять** summary в Telegram bot
 
@@ -24,9 +25,9 @@
 - **JS-heavy docs** с headless fallback
 - **Git-native docs-репозиториев**
 
-Текущая stable-версия: **`1.3.4`**
+Текущая stable-версия: **`1.4.0`**
 
-Следующие этапы после `v1.3.4`: см. [ROADMAP.md](ROADMAP.md).
+Следующие этапы после `v1.4.0`: см. [ROADMAP.md](ROADMAP.md).
 
 ## **Быстрый Старт**
 
@@ -68,6 +69,7 @@ docsync source add openclaw \
 
 ```bash
 docsync sync openclaw --json
+docsync sync openclaw --chunk-target-words 180 --chunk-overlap-words 30
 ```
 
 ### **5. Импортировать в OmniMem**
@@ -170,6 +172,21 @@ docsync source auto-import drizzle --enable --omnimem-direct
 ```
 
 После этого обычный `docsync sync drizzle` будет не только скачивать docs, но и сразу импортировать snapshot в OmniMem.
+
+## **Section-Aware Chunking**
+
+Теперь `docsync` пишет одновременно:
+
+- `pages/` для очищенного Markdown на уровне страницы
+- `chunks/` для Markdown, разбитого по section
+
+Если в snapshot есть chunk metadata, import в OmniMem предпочитает `chunks/`.
+
+Настройка размера chunk на конкретный sync:
+
+```bash
+docsync sync drizzle --chunk-target-words 180 --chunk-overlap-words 30
+```
 
 ## **Простая Модель Работы**
 

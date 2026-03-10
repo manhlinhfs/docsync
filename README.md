@@ -13,6 +13,7 @@ With one tool, you can:
 - **Normalize** noisy Markdown/MDX before hashing or import
 - **Track changes** across snapshots with incremental sync
 - **Import** only new or changed pages into OmniMem
+- **Chunk** normalized docs into section-aware Markdown artifacts
 - **Review** collected pages in a local dashboard
 - **Notify** Telegram bots with snapshot summaries
 
@@ -24,9 +25,9 @@ It works well for:
 - **JS-heavy docs** with optional headless fallback
 - **Git-native docs repos**
 
-Current stable version: **`1.3.4`**
+Current stable version: **`1.4.0`**
 
-Planned milestones after `v1.3.4`: see [ROADMAP.md](ROADMAP.md).
+Planned milestones after `v1.4.0`: see [ROADMAP.md](ROADMAP.md).
 
 ## **Quick Start**
 
@@ -68,6 +69,7 @@ docsync source add openclaw \
 
 ```bash
 docsync sync openclaw --json
+docsync sync openclaw --chunk-target-words 180 --chunk-overlap-words 30
 ```
 
 ### **5. Import into OmniMem**
@@ -170,6 +172,21 @@ docsync source auto-import drizzle --enable --omnimem-direct
 ```
 
 After that, a normal `docsync sync drizzle` will fetch docs and immediately import the snapshot into OmniMem.
+
+## **Section-Aware Chunking**
+
+`docsync` now writes both:
+
+- `pages/` for cleaned page-level Markdown
+- `chunks/` for section-aware Markdown chunks
+
+When chunk metadata exists, OmniMem import prefers `chunks/`.
+
+Tune chunk sizing per sync:
+
+```bash
+docsync sync drizzle --chunk-target-words 180 --chunk-overlap-words 30
+```
 
 ## **How `docsync` Thinks**
 

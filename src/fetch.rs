@@ -9,6 +9,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Serialize;
 use url::Url;
 
+use crate::chunking::{ChunkingConfig, summarize_chunks, write_markdown_chunks};
 use crate::headless::{render_url, should_try_headless};
 use crate::incremental::{PreviousPageState, sha256_hex};
 use crate::models::{
@@ -35,12 +36,15 @@ pub fn fetch_snapshot_pages(
     previous_pages: Option<&BTreeMap<String, PreviousPageState>>,
     proxy_url: Option<&str>,
     browser_cmd: Option<&str>,
+    chunking: ChunkingConfig,
 ) -> Result<FetchOutcome> {
     let client = build_http_client(30, proxy_url)?;
 
     let pages_root = snapshot_dir.join("pages");
+    let chunks_root = snapshot_dir.join("chunks");
     let raw_root = snapshot_dir.join("raw");
     ensure_directory(&pages_root)?;
+    ensure_directory(&chunks_root)?;
     ensure_directory(&raw_root)?;
 
     let mut method_counts = BTreeMap::new();
@@ -51,6 +55,7 @@ pub fn fetch_snapshot_pages(
     let mut normalized_pages = 0usize;
     let mut normalization_changed_pages = 0usize;
     let mut quality_pages = Vec::new();
+    let mut chunk_entries = Vec::new();
     let mut seen_keys = BTreeSet::new();
 
     for page in frontier {
@@ -65,6 +70,8 @@ pub fn fetch_snapshot_pages(
             previous_pages.and_then(|pages| pages.get(&page.url)),
             proxy_url,
             browser_cmd,
+            &chunks_root,
+            chunking,
         )?;
         seen_keys.insert(fetched.page_key.clone());
 
@@ -87,6 +94,7 @@ pub fn fetch_snapshot_pages(
             if let Some(quality) = fetched.quality.as_ref() {
                 quality_pages.push(quality.clone());
             }
+            chunk_entries.extend(fetched.chunks.clone());
         } else {
             skipped_pages += 1;
         }
@@ -121,6 +129,7 @@ pub fn fetch_snapshot_pages(
                     byte_size: 0,
                     normalization: previous.normalization.clone(),
                     quality: previous.quality.clone(),
+                    chunks: Vec::new(),
                 });
             }
         }
@@ -135,6 +144,7 @@ pub fn fetch_snapshot_pages(
             normalized_pages,
             normalization_changed_pages,
             quality: Some(summarize_quality(quality_pages.iter())),
+            chunking: Some(summarize_chunks(&chunk_entries, chunking)),
             method_counts,
         },
         pages: manifest_pages,
@@ -152,6 +162,8 @@ fn fetch_one_page(
     previous: Option<&PreviousPageState>,
     proxy_url: Option<&str>,
     browser_cmd: Option<&str>,
+    chunks_root: &Path,
+    chunking: ChunkingConfig,
 ) -> Result<PageManifestEntry> {
     let requested_url = Url::parse(&page.url)
         .with_context(|| format!("failed to parse discovered page URL {}", page.url))?;
@@ -216,6 +228,7 @@ fn fetch_one_page(
                 } else {
                     None
                 };
+            let chunks = copy_previous_chunks(previous, chunks_root, &stem)?;
             if page_path.is_file() {
                 let metadata = PageMetadata {
                     schema_version: 3,
@@ -277,6 +290,7 @@ fn fetch_one_page(
                 byte_size,
                 normalization: previous.normalization.clone(),
                 quality: previous.quality.clone(),
+                chunks,
             });
         }
     }
@@ -298,6 +312,13 @@ fn fetch_one_page(
         write_bytes(&page_path, normalized_bytes)?;
         let content_hash = sha256_hex(normalized_bytes);
         let change_status = compare_change(previous, &content_hash);
+        let chunks = write_markdown_chunks(
+            chunks_root,
+            &stem,
+            &page_key,
+            &normalized.markdown,
+            chunking,
+        )?;
         let metadata = PageMetadata {
             schema_version: 3,
             fetched_at: now_utc_rfc3339(),
@@ -347,6 +368,7 @@ fn fetch_one_page(
             byte_size,
             normalization: Some(normalized.summary),
             quality: Some(quality),
+            chunks,
         });
     }
 
@@ -374,6 +396,13 @@ fn fetch_one_page(
         write_bytes(&page_path, normalized.markdown.as_bytes())?;
         let content_hash = sha256_hex(normalized.markdown.as_bytes());
         let change_status = compare_change(previous, &content_hash);
+        let chunks = write_markdown_chunks(
+            chunks_root,
+            &stem,
+            &page_key,
+            &normalized.markdown,
+            chunking,
+        )?;
         let metadata = PageMetadata {
             schema_version: 3,
             fetched_at: now_utc_rfc3339(),
@@ -423,6 +452,7 @@ fn fetch_one_page(
             byte_size,
             normalization: Some(normalized.summary),
             quality: Some(quality),
+            chunks,
         });
     }
 
@@ -451,7 +481,31 @@ fn fetch_one_page(
         byte_size,
         normalization: None,
         quality: None,
+        chunks: Vec::new(),
     })
+}
+
+fn copy_previous_chunks(
+    previous: &PreviousPageState,
+    chunks_root: &Path,
+    stem: &str,
+) -> Result<Vec<crate::models::ChunkManifestEntry>> {
+    let mut copied = Vec::new();
+
+    for chunk in &previous.chunks {
+        let chunk_path = chunk_file_path(chunks_root, stem, chunk.ordinal);
+        copy_artifact(&chunk.chunk_path, &chunk_path)?;
+        let byte_size = chunk_path
+            .metadata()
+            .with_context(|| format!("failed to stat {}", chunk_path.display()))?
+            .len();
+        let mut cloned = chunk.clone();
+        cloned.chunk_path = chunk_path;
+        cloned.byte_size = byte_size;
+        copied.push(cloned);
+    }
+
+    Ok(copied)
 }
 
 fn storage_stem(url: &Url) -> String {
@@ -492,6 +546,11 @@ fn metadata_path_for(page_path: &Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .unwrap_or("page.md");
     page_path.with_file_name(format!("{file_name}.json"))
+}
+
+fn chunk_file_path(root: &Path, stem: &str, ordinal: usize) -> PathBuf {
+    let stem = stem.strip_suffix(".md").unwrap_or(stem);
+    root.join(format!("{stem}__chunk-{ordinal:03}.md"))
 }
 
 fn sanitize_segment(value: &str) -> String {
